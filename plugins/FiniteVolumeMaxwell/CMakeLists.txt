@@ -1,0 +1,96 @@
+IF ( NOT CF_HAVE_SINGLE_EXEC )
+SET ( MYLIBNAME "FiniteVolumeMaxwell" )
+ELSE ()
+SET ( MYLIBNAME "coolfluid-solver" )
+ENDIF()
+
+LIST ( APPEND FiniteVolumeMaxwell_files
+DivMonitoring.cxx
+DivMonitoring.hh
+FiniteVolumeMaxwell.hh
+HartmannSourceTermMaxwell.ci
+HartmannSourceTermMaxwell.cxx
+HartmannSourceTermMaxwell.hh
+Irradiation2DProjectionDim.cxx
+Irradiation2DProjectionDim.hh
+MacCormackMaxwell.cxx
+MacCormackMaxwellProjection.cxx
+MacCormackMaxwell2D.ci
+MacCormackMaxwell2D.hh
+MacCormackMaxwell2DProjection.ci
+MacCormackMaxwell2DProjection.hh
+MacCormackMaxwell3D.ci
+MacCormackMaxwell3D.hh
+MacCormackMaxwell3DProjection.ci
+MacCormackMaxwell3DProjection.hh
+MunzFluxMaxwell.cxx
+MunzFluxMaxwell2D.ci
+MunzFluxMaxwell2D.hh
+MunzFluxMaxwell3D.ci
+MunzFluxMaxwell3D.hh
+#NoSlipWall2DProjectionDim.cxx
+#NoSlipWall2DProjectionDim.hh
+SteadySilverMullerCondition2D.cxx
+SteadySilverMullerCondition2D.hh
+SilverMullerCondition2D.cxx
+SilverMullerCondition2D.hh
+SilverMullerCondition2DProjection.cxx
+SilverMullerCondition2DProjection.hh
+SilverMullerCondition2DProjectionDim.cxx
+SilverMullerCondition2DProjectionDim.hh
+SimmetryPlane2DProjectionDim.cxx
+SimmetryPlane2DProjectionDim.hh
+StegerWarmingMaxwell.cxx
+StegerWarmingMaxwellAdim.cxx
+StegerWarmingMaxwellProjection.cxx
+StegerWarmingMaxwellProjectionAdim.cxx
+StegerWarmingMaxwell2D.ci
+StegerWarmingMaxwell2D.hh
+StegerWarmingMaxwellProjection2D.ci
+StegerWarmingMaxwellProjection2D.hh
+StegerWarmingMaxwellProjection3D.ci
+StegerWarmingMaxwellProjection3D.hh
+StegerWarmingMaxwellAdim2D.ci
+StegerWarmingMaxwellAdim2D.hh
+StegerWarmingMaxwellAdim3D.ci
+StegerWarmingMaxwellAdim3D.hh
+StegerWarmingMaxwellProjectionAdim2D.ci
+StegerWarmingMaxwellProjectionAdim2D.hh
+StegerWarmingMaxwellProjectionAdim3D.ci
+StegerWarmingMaxwellProjectionAdim3D.hh
+StegerWarmingMaxwell3D.ci
+StegerWarmingMaxwell3D.hh
+TruncatedDomain2DProjection.cxx
+TruncatedDomain2DProjection.hh
+PerfectConductingWall2D.cxx
+PerfectConductingWall2D.hh
+PerfectConductingWall2DProjectionAdim.cxx
+PerfectConductingWall2DProjectionAdim.hh
+PerfectConductingWall2DAdim.cxx
+PerfectConductingWall2DAdim.hh
+PerfectConductingWall3DProjectionDim.cxx
+PerfectConductingWall3DProjectionDim.hh
+#PerfectElectricalIsolatedWall2DProjectionDim.cxx
+#PerfectElectricalIsolatedWall2DProjectionDim.hh
+UnsteadyPerfectConductingWall2DProjection.hh
+UnsteadyPerfectConductingWall2DProjection.cxx
+UnsteadyPerfectConductingWall2DProjectionDim.hh
+UnsteadyPerfectConductingWall2DProjectionDim.cxx
+UnsteadyPerfectConductingWall3D.hh
+UnsteadyPerfectConductingWall3D.cxx
+)
+
+IF ( NOT CF_HAVE_SINGLE_EXEC )
+LIST ( APPEND FiniteVolumeMaxwell_requires_mods FiniteVolume Maxwell TecplotWriter )
+LIST ( APPEND FiniteVolumeMaxwell_cflibs Framework FiniteVolume Maxwell TecplotWriter )
+CF_ADD_PLUGIN_LIBRARY ( FiniteVolumeMaxwell )
+ELSE()
+IF ( CF_BUILD_FiniteVolumeMaxwell)
+FOREACH (AFILE ${FiniteVolumeMaxwell_files} )
+LIST(APPEND coolfluid-solver_files ../../plugins/FiniteVolumeMaxwell/${AFILE} )
+ENDFOREACH(AFILE)
+CF_CACHE_LIST_APPEND ( ${MYLIBNAME}_files  ${coolfluid-solver_files} )
+ENDIF()
+ENDIF()
+
+CF_WARN_ORPHAN_FILES()

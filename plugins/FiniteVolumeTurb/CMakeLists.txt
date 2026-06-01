@@ -1,0 +1,48 @@
+LIST ( APPEND FiniteVolumeSA_files
+FiniteVolumeSA.hh
+NavierStokesSATruncateK.cxx
+NavierStokesSATruncateK.hh
+NoSlipWallIsothermalNSSAPvt.hh
+NoSlipWallIsothermalNSSAPvt.cxx
+SA2DSourceTerm.hh
+SA2DSourceTerm.cxx
+SA3DSourceTerm.hh
+SA3DSourceTerm.cxx
+SA2DDES97.hh
+SA2DDES97.cxx
+SA3DDES97.hh
+SA3DDES97.cxx
+SA2DDelDES.hh
+SA2DDelDES.cxx
+SA3DDelDES.hh
+SA3DDelDES.cxx
+)
+
+LIST ( APPEND FiniteVolumeSA_cflibs FiniteVolume FiniteVolumeNavierStokes NavierStokes SA )
+LIST ( APPEND FiniteVolumeSA_requires_mods FiniteVolume FiniteVolumeNavierStokes NavierStokes SA )
+
+LIST ( APPEND FiniteVolumeKOmega_files
+FiniteVolumeKOmega.hh
+DistanceBasedExtrapolatorGMoveKOmega.ci
+DistanceBasedExtrapolatorGMoveKOmega.cxx
+DistanceBasedExtrapolatorGMoveKOmega.hh
+DistanceBasedExtrapolatorGMoveKOmega2D.cxx
+DistanceBasedExtrapolatorGMoveKOmega2D.hh
+DistanceBasedExtrapolatorGMoveKOmega3D.cxx
+DistanceBasedExtrapolatorGMoveKOmega3D.hh
+NavierStokesKOmega2DSourceTerm.ci
+NavierStokesKOmega2DSourceTerm.cxx
+NavierStokesKOmega2DSourceTerm.hh
+NavierStokesKOmega3DSourceTerm.cxx
+NavierStokesKOmega3DSourceTerm.hh
+NoSlipWallIsothermalNSKOmPvt.hh
+NoSlipWallIsothermalNSKOmPvt.ci
+NoSlipWallIsothermalNSKOmPvt.cxx
+)
+
+LIST ( APPEND FiniteVolumeKOmega_cflibs FiniteVolume FiniteVolumeNavierStokes NavierStokes KOmega )
+LIST ( APPEND FiniteVolumeKOmega_requires_mods FiniteVolume FiniteVolumeNavierStokes NavierStokes KOmega )
+
+CF_ADD_PLUGIN_LIBRARY ( FiniteVolumeSA )
+CF_ADD_PLUGIN_LIBRARY ( FiniteVolumeKOmega )
+CF_WARN_ORPHAN_FILES()

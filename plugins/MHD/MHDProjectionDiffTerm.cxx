@@ -1,0 +1,68 @@
+#include "MHD/MHDProjectionDiffTerm.hh"
+
+//////////////////////////////////////////////////////////////////////////////
+
+using namespace std;
+using namespace COOLFluiD::Framework;
+using namespace COOLFluiD::Common;
+
+//////////////////////////////////////////////////////////////////////////////
+
+namespace COOLFluiD {
+
+  namespace Physics {
+
+    namespace MHD {
+
+//////////////////////////////////////////////////////////////////////////////
+
+void MHDProjectionDiffTerm::defineConfigOptions(Config::OptionList& options)
+{
+  options.addConfigOption< CFreal, Config::DynamicOption<> >
+    ("thermalConductionFactor","Factor to activate thermal conduction.");
+}
+      
+//////////////////////////////////////////////////////////////////////////////
+
+MHDProjectionDiffTerm::MHDProjectionDiffTerm(const std::string& name) :
+  BaseTerm(name)
+{
+  addConfigOptionsTo(this);
+
+  _tConductionFactor = 1.0;
+  setParameter("thermalConductionFactor",&_tConductionFactor);
+}
+      
+//////////////////////////////////////////////////////////////////////////////
+
+MHDProjectionDiffTerm::~MHDProjectionDiffTerm()
+{
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+void MHDProjectionDiffTerm::configure ( Config::ConfigArgs& args )
+{
+  BaseTerm::configure(args);
+}
+      
+//////////////////////////////////////////////////////////////////////////////
+
+void MHDProjectionDiffTerm::setupPhysicalData()
+{
+  // resize the physical data
+  cf_assert(getDataSize() > 0);
+
+  m_physicalData.resize(getDataSize());
+  m_refPhysicalData.resize(getDataSize());
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+    } // namespace MHD
+
+  } // namespace Physics
+
+} // namespace COOLFluiD
+
+//////////////////////////////////////////////////////////////////////////////

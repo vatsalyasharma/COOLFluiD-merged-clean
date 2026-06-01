@@ -1,0 +1,140 @@
+IF ( NOT CF_HAVE_SINGLE_EXEC )
+SET ( MYLIBNAME "FiniteVolumeMHD" )
+ELSE ()
+SET ( MYLIBNAME "coolfluid-solver" )
+ENDIF()
+
+LIST ( APPEND FiniteVolumeMHD_files
+AUSMFluxMHD.ci 
+AUSMFluxMHD.cxx 
+AUSMFluxMHD.hh
+AUSMPWFluxMHD.ci 
+AUSMPWFluxMHD.hh
+ComputeFieldFromPotentialMHD.cxx
+ComputeFieldFromPotentialMHD.hh
+FiniteVolumeMHD.hh
+MHD3DCoriolisCentrifugalForcesSourceTerm.hh
+MHD3DProjectionCoriolisCentrifugalForcesSourceTerm.hh
+MHD3DProjectionPolytropicCoriolisSourceTerm.hh
+MHD3DProjectionHeatingSourceTerm.hh
+MHD3DProjectionInitStatePFSS.hh
+MHD3DProjectionPolytropicInitStatePFSS.hh
+HLLDecEFlux.cxx
+HLLDecEFlux.hh
+HLLEFluxMHD.cxx
+HLLETanakaFlux.ci
+HLLETanakaFlux.hh
+iPic3DCoupler.cxx
+iPic3DCoupler.hh
+LaxFriedFluxTanaka.hh
+LaxFriedFluxTanaka.ci
+MHD3DPowellSourceTerm.hh
+MirrorMHD2D.hh
+MirrorMHD2DTanaka.hh
+MirrorMHD2DProjection.hh
+MirrorMHD3DProjectionPhotosphere.hh
+MirrorMHD3DProjectionPhotosphereGroth.hh
+MirrorMHD3DProjectionPolytropicPhotosphere.hh
+MirrorMHD3DProjectionPolytropicPhotosphereGroth.hh
+MirrorMHD2DProjectionTanaka.hh
+MirrorMHD3DProjectionTanaka.hh
+MirrorMHD3DProjectionTanakaLinearDensityExtrapolation.hh
+MirrorMHD3DProjectionTanakaPFix.hh
+MirrorMHD3DProjectionTanakaRotation.hh
+MirrorMHD3DProjection.hh
+MirrorMHD3D.hh
+MirrorMHD3DTanaka.hh
+MirrorMHD3DTanakaPFix.hh
+MHD2DConsACAHWSourceTerm.hh
+MHDConsACAHWSourceTerm.hh
+MHDConsACASourceTerm.hh
+MHD2DPowellSourceTerm.hh
+MHD3DProjectionGravitySourceTerm.hh
+MHD3DProjectionPolytropicGravitySourceTerm.hh
+MHD3DGravitySourceTerm.hh
+MHD3DProjectionIoTorusSourceTerm.hh
+MHDRoeFlux.hh
+MHDRoeFlux.ci
+SuperOutletMHD2DProjection.hh
+SuperOutletMHD3DProjection.hh
+SuperOutletMHD3DProjectionHeating.hh
+SuperOutletMHD3DProjectionPolytropic.hh
+MHD3DCoriolisCentrifugalForcesSourceTerm.cxx
+MHD3DProjectionHeatingSourceTerm.cxx
+MHD3DProjectionInitStatePFSS.cxx
+MHD3DProjectionPolytropicInitStatePFSS.cxx
+MHD3DProjectionCoriolisCentrifugalForcesSourceTerm.cxx
+MHD3DProjectionPolytropicCoriolisSourceTerm.cxx
+LaxFriedFluxTanaka.cxx
+MHD3DPowellSourceTerm.cxx
+MHD2DPowellSourceTerm.cxx
+MHD3DGravitySourceTerm.cxx
+MHD3DProjectionGravitySourceTerm.cxx
+MHD3DProjectionPolytropicGravitySourceTerm.cxx
+MHD3DProjectionIoTorusSourceTerm.cxx
+MirrorMHD2D.cxx
+MirrorMHD2DTanaka.cxx
+MirrorMHD2DProjection.cxx
+MirrorMHD3DProjectionPhotosphere.cxx
+MirrorMHD3DProjectionPhotosphereGroth.cxx
+MirrorMHD3DProjectionPolytropicPhotosphere.cxx
+MirrorMHD3DProjectionPolytropicPhotosphereGroth.cxx
+MirrorMHD2DProjectionTanaka.cxx
+MirrorMHD3DProjectionTanaka.cxx
+MirrorMHD3DProjectionTanakaLinearDensityExtrapolation.cxx
+MirrorMHD3DProjectionTanakaPFix.cxx
+MirrorMHD3DProjectionTanakaRotation.cxx
+MirrorMHD3DProjection.cxx
+MirrorMHD3D.cxx
+MirrorMHD3DTanaka.cxx
+MirrorMHD3DTanakaPFix.cxx
+MHD2DConsACAHWSourceTerm.cxx
+MHDConsACAHWSourceTerm.cxx
+MHDConsACASourceTerm.cxx
+MHDRoeFlux.cxx
+NSFluxMHD.cxx   
+SuperOutletMHD2DProjection.cxx
+SuperOutletMHD3DProjection.cxx
+SuperOutletMHD3DProjectionHeating.cxx
+SuperOutletMHD3DProjectionPolytropic.cxx
+FVMCC_ComputeRHSMHD.hh
+FVMCC_ComputeRHSMHD.ci
+FVMCC_ComputeRHSMHD.cxx
+SuperInletMHD2DProjection.hh
+SuperInletMHD2DProjection.cxx
+UnsteadySuperInletFromInputMHD3DProjection.hh
+UnsteadySuperInletFromInputMHD3DProjection.cxx
+UnsteadyMHD3DProjectionPhotosphere.hh
+UnsteadyMHD3DProjectionPhotosphere.cxx
+UnsteadyMHD3DProjectionPolytropicPhotosphere.hh
+UnsteadyMHD3DProjectionPolytropicPhotosphere.cxx
+Venktn3DStrict.cxx
+Venktn3DStrict.hh
+SuperInletProjectionGeneral.cxx
+SuperInletProjectionGeneral.hh
+SuperInletProjectionParallelRotation.cxx
+SuperInletProjectionParallelRotation.hh
+SuperInletProjectionConstrained.cxx
+SuperInletProjectionConstrained.hh
+SuperInletProjectionParallelRotationAlfven.cxx
+SuperInletProjectionParallelRotationAlfven.hh
+SuperOutletMHD3DProjection9.cxx
+SuperOutletMHD3DProjection9.hh
+SuperOutletMHD3DProjectionEps.cxx
+SuperOutletMHD3DProjectionEps.hh
+)
+
+IF ( NOT CF_HAVE_SINGLE_EXEC )
+LIST ( APPEND FiniteVolumeMHD_requires_mods FiniteVolume MHD )
+LIST ( APPEND FiniteVolumeMHD_libs FiniteVolume MHD )
+CF_ADD_PLUGIN_LIBRARY ( FiniteVolumeMHD )
+ELSE()
+IF ( CF_BUILD_FiniteVolumeMHD )
+FOREACH (AFILE ${FiniteVolumeMHD_files} )
+LIST(APPEND coolfluid-solver_files ../../plugins/FiniteVolumeMHD/${AFILE} )
+ENDFOREACH(AFILE)
+CF_CACHE_LIST_APPEND ( ${MYLIBNAME}_files  ${coolfluid-solver_files} )
+ENDIF()
+ENDIF()
+
+CF_WARN_ORPHAN_FILES()

@@ -1,0 +1,128 @@
+################################################################################
+# 
+# This COOLFluiD CFcase file tests: 
+# 
+# Finite Volume, Euler3D, Forward Euler, mesh with triangles, converter from 
+# THOR to CFmesh, second-order reconstruction with Venkatakhrisnan limiter, 
+# supersonic inlet and outlet, slip wall BC, mesh fitting algorithm 
+#
+################################################################################
+#
+# Comments begin with "#"
+# Meta Comments begin with triple "#"
+#
+### Residual = -4.00014829
+
+# SubSystem Modules
+Simulator.Modules.Libs = libCFmeshFileWriter libCFmeshFileReader libTecplotWriter libNavierStokes libFiniteVolume libFiniteVolumeNavierStokes libForwardEuler libPetscI libCFmeshExtruder
+
+# SubSystem Parameters
+Simulator.Paths.WorkingDir = plugins/NavierStokes/testcases/Wedge/
+Simulator.Paths.ResultsDir       = ./
+
+Simulator.SubSystem.Default.PhysicalModelType = Euler3D
+
+Simulator.SubSystem.OutputFormat      = Tecplot CFmesh
+Simulator.SubSystem.CFmesh.FileName   = wedge3dFVM.CFmesh
+Simulator.SubSystem.CFmesh.SaveRate   = 100
+Simulator.SubSystem.CFmesh.AppendTime = false
+Simulator.SubSystem.CFmesh.AppendIter = false
+
+Simulator.SubSystem.Tecplot.FileName       = wedgeFVM.plt
+Simulator.SubSystem.Tecplot.Data.outputVar = Cons
+Simulator.SubSystem.Tecplot.SaveRate       = 100
+Simulator.SubSystem.Tecplot.AppendTime     = false
+Simulator.SubSystem.Tecplot.AppendIter     = true
+
+Simulator.SubSystem.StopCondition       = Norm
+Simulator.SubSystem.Norm.valueNorm      = -4.0
+
+# setting for PETSC linear system solver
+Simulator.SubSystem.LinearSystemSolver = PETSC
+Simulator.SubSystem.LSSNames = MeshAlgoLSS
+# preconditioner types: PCILU for serial, PCASM for serial/parallel
+Simulator.SubSystem.MeshAlgoLSS.Data.UseNodeBased = true
+Simulator.SubSystem.MeshAlgoLSS.Data.PCType = PCASM
+Simulator.SubSystem.MeshAlgoLSS.Data.KSPType = KSPGMRES
+Simulator.SubSystem.MeshAlgoLSS.Data.MatOrderingType = MATORDERING_RCM
+Simulator.SubSystem.MeshAlgoLSS.Data.MaxIter = 1000
+Simulator.SubSystem.MeshAlgoLSS.Data.SaveSystemToFile = false
+Simulator.SubSystem.MeshAlgoLSS.MaskEquationIDs = 0 1 2
+Simulator.SubSystem.MeshAlgoLSS.Data.NbKrylovSpaces = 50
+
+Simulator.SubSystem.Default.listTRS = InnerFaces SlipWall SuperInlet SuperOutlet Top Bottom
+
+Simulator.SubSystem.MeshCreator = CFmeshFileReader
+Simulator.SubSystem.CFmeshFileReader.Data.FileName = wedge3dQuads.CFmesh
+Simulator.SubSystem.CFmeshFileReader.Data.convertFromFile = wedge2dQuadsIN.CFmesh
+Simulator.SubSystem.CFmeshFileReader.convertFrom = Extruder2DFVM
+Simulator.SubSystem.CFmeshFileReader.Extruder2DFVM.NbLayers = 20
+Simulator.SubSystem.CFmeshFileReader.Extruder2DFVM.ExtrudeSize = 1.
+Simulator.SubSystem.CFmeshFileReader.Extruder2DFVM.Split = false
+Simulator.SubSystem.CFmeshFileReader.ParReadCFmesh.ParCFmeshFileReader.ParMetis.NCommonNodes = 4
+
+Simulator.SubSystem.ConvergenceMethod = FwdEuler
+Simulator.SubSystem.FwdEuler.Data.CFL.Value = 1.0
+#Simulator.SubSystem.FwdEuler.Data.CFL.ComputeCFL = Function
+#Simulator.SubSystem.FwdEuler.Data.CFL.Function.Def = if(i<100,1.,if(i<200,2.,min(1000.,cfl*1.1)))
+Simulator.SubSystem.FwdEuler.UpdateSol = StdUpdateSol
+Simulator.SubSystem.FwdEuler.StdUpdateSol.ClipResidual = false 
+
+Simulator.SubSystem.SpaceMethod = CellCenterFVM
+Simulator.SubSystem.CellCenterFVM.Data.FluxSplitter = AUSMPlus3D
+Simulator.SubSystem.CellCenterFVM.Data.UpdateVar   = Cons
+Simulator.SubSystem.CellCenterFVM.Data.SolutionVar = Cons
+Simulator.SubSystem.CellCenterFVM.Data.LinearVar   = Roe
+
+Simulator.SubSystem.CellCenterFVM.SetupCom = LeastSquareP1Setup
+Simulator.SubSystem.CellCenterFVM.SetupNames = Setup1
+Simulator.SubSystem.CellCenterFVM.Setup1.stencil = FaceVertexPlusGhost
+Simulator.SubSystem.CellCenterFVM.UnSetupCom = LeastSquareP1UnSetup
+Simulator.SubSystem.CellCenterFVM.UnSetupNames = UnSetup1
+Simulator.SubSystem.CellCenterFVM.Data.PolyRec = LinearLS3D
+Simulator.SubSystem.CellCenterFVM.Data.LinearLS3D.limitRes = -1.2
+Simulator.SubSystem.CellCenterFVM.Data.Limiter = Venktn3D
+Simulator.SubSystem.CellCenterFVM.Data.Venktn3D.coeffEps = 1.0
+
+Simulator.SubSystem.CellCenterFVM.InitComds = InitState
+Simulator.SubSystem.CellCenterFVM.InitNames = InField
+
+Simulator.SubSystem.CellCenterFVM.InField.applyTRS = InnerFaces
+Simulator.SubSystem.CellCenterFVM.InField.Vars = x y z 
+Simulator.SubSystem.CellCenterFVM.InField.Def = 1. 2.366431913 0.0 0.0 5.3
+
+Simulator.SubSystem.CellCenterFVM.BcComds = MirrorEuler3DFVMCC MirrorEuler3DFVMCC MirrorEuler3DFVMCC SuperInletFVMCC SuperOutletFVMCC 
+Simulator.SubSystem.CellCenterFVM.BcNames = BcWall BcTop BcBottom BcInlet BcOutlet 
+
+Simulator.SubSystem.CellCenterFVM.BcWall.applyTRS = SlipWall
+
+Simulator.SubSystem.CellCenterFVM.BcTop.applyTRS = Top 
+
+Simulator.SubSystem.CellCenterFVM.BcBottom.applyTRS = Bottom 
+
+Simulator.SubSystem.CellCenterFVM.BcInlet.applyTRS = SuperInlet
+Simulator.SubSystem.CellCenterFVM.BcInlet.Vars = x y z
+Simulator.SubSystem.CellCenterFVM.BcInlet.Def = 1. 2.366431913 0.0 0.0 5.3
+
+Simulator.SubSystem.CellCenterFVM.BcOutlet.applyTRS = SuperOutlet
+
+Simulator.SubSystem.DataPostProcessing          = DataProcessing
+Simulator.SubSystem.DataPostProcessingNames     = MeFiAlgo
+Simulator.SubSystem.MeFiAlgo.Comds              = MeshFittingAlgorithm
+Simulator.SubSystem.MeFiAlgo.Data.CollaboratorNames = MeshAlgoLSS
+Simulator.SubSystem.MeFiAlgo.ProcessRate        = 10
+Simulator.SubSystem.MeFiAlgo.SkipFirstIteration = true
+Simulator.SubSystem.MeFiAlgo.StopIter           = 2000
+Simulator.SubSystem.MeFiAlgo.Names              = MeshFitting
+Simulator.SubSystem.MeFiAlgo.Data.updateVar     = Cons
+ 
+Simulator.SubSystem.MeFiAlgo.MeshFitting.minPercentile    = 0.30
+Simulator.SubSystem.MeFiAlgo.MeshFitting.maxPercentile    = 0.55
+Simulator.SubSystem.MeFiAlgo.MeshFitting.meshAcceleration = 0.05
+Simulator.SubSystem.MeFiAlgo.MeshFitting.monitorVarID     = 0
+Simulator.SubSystem.MeFiAlgo.MeshFitting.equilibriumSpringLength = 1e-3
+Simulator.SubSystem.MeFiAlgo.MeshFitting.ratioBoundaryToInnerEquilibriumSpringLength = 0.1
+
+Simulator.SubSystem.MeFiAlgo.MeshFitting.unlockedBoundaryTRSs = SuperOutlet SuperInlet SlipWall Top Bottom
+
+Simulator.SubSystem.CellCenterFVM.AfterMeshUpdateCom = StdMeshFittingUpdate

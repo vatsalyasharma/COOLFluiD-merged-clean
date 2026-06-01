@@ -1,0 +1,150 @@
+#include "Framework/SubSystemStatus.hh"
+#include "Framework/Node.hh"
+#include "Framework/EquationSetData.hh"
+
+//////////////////////////////////////////////////////////////////////////////
+
+namespace COOLFluiD {
+
+  namespace Numerics {
+
+    namespace FiniteVolume {
+
+//////////////////////////////////////////////////////////////////////////////
+
+template <class BASE>
+AUSMFluxMultiFluidALE<BASE>::AUSMFluxMultiFluidALE(const std::string& name) :
+  BASE(name),
+  socket_pastNodes("pastNodes"),
+  socket_futureNodes("futureNodes"),
+  m_vgn(0.),
+  m_meshSpeed()
+{
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+template <class BASE>
+AUSMFluxMultiFluidALE<BASE>::~AUSMFluxMultiFluidALE()
+{
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+template <class BASE>
+void AUSMFluxMultiFluidALE<BASE>::setup()
+{
+  BASE::setup();
+  
+  m_meshSpeed.resize(Framework::PhysicalModelStack::getActive()->getDim());
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+template <class BASE>
+void AUSMFluxMultiFluidALE<BASE>::computeMeshSpeed()
+{
+  using namespace std;
+  using namespace COOLFluiD::Framework;
+  
+  // Compute the meshSpeed
+  const CFreal dt = Framework::SubSystemStatusStack::getActive()->getDT();
+  cf_assert(dt > 0.);
+  
+  CellCenterFVMData& data = this->getMethodData(); 
+  Framework::GeometricEntity *const geo = data.getCurrentFace();
+  //Geometric shape function at the current quadrature point
+  const RealVector& shapeFunction = data.getPolyReconstructor()->getCurrentGeoShapeFunction(geo);
+  
+  m_meshSpeed = 0.;
+  
+  DataHandle<Node*> pastNodes = socket_pastNodes.getDataHandle();
+  DataHandle<Node*> futureNodes = socket_futureNodes.getDataHandle();
+  
+  const CFuint nbNodes = geo->nbNodes();
+  const CFuint dim = Framework::PhysicalModelStack::getActive()->getDim();
+
+  // Compute speed of the mesh at current quadrature point
+  for(CFuint iNode = 0; iNode < nbNodes; iNode++) {
+    const CFuint nodeID = (geo->getNode(iNode))->getLocalID();
+    for(CFuint iDim = 0; iDim < dim; iDim++){
+      m_meshSpeed[iDim] += shapeFunction[iNode] * (*(futureNodes[nodeID]))[iDim];
+      m_meshSpeed[iDim] -= shapeFunction[iNode] * (*(pastNodes[nodeID]))[iDim];
+      // cout << "future = " <<(*(futureNodes[nodeID]))[iDim] <<endl;
+      // cout << "past   =" <<(*(pastNodes[nodeID]))[iDim] << endl;
+    }
+  }
+  
+  m_meshSpeed /= dt;
+  
+  /*if (m_meshSpeed.norm2() > 0.) {
+    cout << "meshSpeed = " <<m_meshSpeed <<endl;
+    for(CFuint iNode = 0; iNode < nbNodes; iNode++) {
+      const CFuint nodeID = (geo->getNode(iNode))->getLocalID();
+      for(CFuint iDim = 0; iDim < dim; iDim++){
+	cout << "SF = " <<shapeFunction[iNode] <<endl;
+	cout << "future = " <<(*(futureNodes[nodeID]))[iDim] <<endl;
+	cout << "past   =" <<(*(pastNodes[nodeID]))[iDim] << endl;
+      }
+    }
+    exit(1);
+    }*/
+  
+  // CFout << "Meshspeed: " << _meshSpeed <<"\n";
+  //Compute vg*n
+  const RealVector& unitNormal = data.getUnitNormal(); 
+  m_vgn = m_meshSpeed[0] * unitNormal[0];
+  for(CFuint iDim = 1;iDim < dim ;iDim++){
+    m_vgn += m_meshSpeed[iDim] * unitNormal[iDim];
+  }
+  // CFout << "Normal meshspeed: " << _vgn <<"\n";
+  
+  // update the normal velocities 
+  this->m_unL -= m_vgn;
+  this->m_unR -= m_vgn;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+template <class BASE>
+std::vector<Common::SafePtr<Framework::BaseDataSocketSink> >  AUSMFluxMultiFluidALE<BASE>::needsSockets()
+{
+  using namespace std;
+  using namespace COOLFluiD::Framework;
+  using namespace COOLFluiD::Common;
+  
+  vector<SafePtr<BaseDataSocketSink> > result  = BASE::needsSockets();
+  
+  result.push_back(&socket_pastNodes);
+  result.push_back(&socket_futureNodes);
+  
+  return result;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+template <class BASE>
+void AUSMFluxMultiFluidALE<BASE>::computeMassFluxImpl(RealVector& result)
+{
+  using namespace std;
+  using namespace COOLFluiD::Framework;
+  
+  BASE::computeMassFluxImpl(result);
+  
+  const CFuint dim = PhysicalModelStack::getActive()->getDim();
+  const CFuint endEM = 8; 
+  const CFuint nbSpecies = this->m_updateVarSet->getModel()->getNbScalarVars(0);
+  for (CFuint ie = 0; ie < nbSpecies; ++ie) {  
+    result[endEM + nbSpecies + nbSpecies*dim + ie] += this->m_p12[ie]*m_vgn;
+  }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+    } // namespace FiniteVolume
+
+  } // namespace Numerics
+
+} // namespace COOLFluiD
+
+//////////////////////////////////////////////////////////////////////////////

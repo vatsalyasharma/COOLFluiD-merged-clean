@@ -1,0 +1,109 @@
+namespace COOLFluiD {
+
+  namespace Numerics {
+
+    namespace ConcurrentCoupler {
+
+//////////////////////////////////////////////////////////////////////////////
+
+ template <typename T>
+ void StdConcurrentDataTransfer::fillMapGlobalToLocal
+ (Common::SafePtr<DataToTrasfer> dtt,
+  Common::SafePtr<Framework::DataStorage> ds,
+  Common::CFMap<CFuint, CFuint>& global2local)
+ {
+   Framework::DataHandle<T, Framework::GLOBAL> dofs = ds->getGlobalData<T>(dtt->dofsName);
+   global2local.reserve(dofs.size());
+   for (CFuint i = 0; i < dofs.size(); ++i) {
+     global2local.insert(dofs[i]->getGlobalID(), dofs[i]->getLocalID());
+   }
+   global2local.sortKeys();
+ }
+
+//////////////////////////////////////////////////////////////////////////////
+
+ template <typename T>
+ void StdConcurrentDataTransfer::fillSendDataGather
+ (Common::SafePtr<DataToTrasfer> dtt,
+  Common::SafePtr<Framework::VarSetTransformer> vsTrans,
+  Common::SafePtr<Framework::DataStorage> ds,
+  CFuint& sendcount, 
+  std::vector<CFreal>& sendbuf,
+  std::vector<CFuint>& sendIDs)
+ {  
+   using namespace COOLFluiD::Framework;
+   
+   DataHandle<T, GLOBAL> dofs = ds->getGlobalData<T>(dtt->dofsName);
+   const CFuint recvStride = dtt->recvStride;
+   const CFuint sendStride = dtt->sendStride;
+   const CFuint localSize = dofs.getLocalSize();
+   sendcount = localSize*dtt->recvStride;
+   sendbuf.reserve(sendcount); 
+   sendIDs.reserve(sendcount);
+   
+   RealVector tState(0., recvStride);
+   RealVector state(sendStride, static_cast<CFreal*>(NULL));
+   cf_assert(tState.size() > 0);
+   cf_assert(state.size() > 0);
+   
+   CFreal* array = dtt->array;
+   CFuint counter = 0;
+   for (CFuint ia = 0; ia < dofs.size(); ++ia) {
+     const CFuint globalID = dofs[ia]->getGlobalID();
+     // only parallel updatable data are communicated
+     if (dofs[ia]->isParUpdatable()) {
+       state.wrap(sendStride, &array[counter]);
+       vsTrans->transform((const RealVector&)state, (RealVector&)tState);
+       for (CFuint s = 0; s < recvStride; ++s) {
+	 sendbuf.push_back(tState[s]);
+	 sendIDs.push_back(globalID*recvStride+s);
+       }
+     }
+     counter += sendStride;
+   }
+   cf_assert(counter == dtt->arraySize);
+ }
+      
+//////////////////////////////////////////////////////////////////////////////
+      
+template <typename T>
+void StdConcurrentDataTransfer::fillSendCountsScatter
+(Common::SafePtr<DataToTrasfer> dtt,
+ Common::SafePtr<Framework::DataStorage> ds,
+ std::vector<int>& sendcounts,
+ std::vector<int>& sendIDcounts)
+{ 
+  using namespace COOLFluiD::Common;
+  using namespace COOLFluiD::Framework;
+  
+  const std::string nspCoupling = dtt->groupName;
+  Group& group = PE::GetPE().getGroup(nspCoupling);
+  const CFuint nbRanks = group.globalRanks.size();
+  
+  CFLog(VERBOSE, "StdConcurrentDataTransfer::fillSendCountsScatter() => " 
+	<< "in scatter namespace [" <<  nspCoupling << "] => nbRanks = "
+	<< nbRanks << "\n");
+  
+  DataHandle<T, GLOBAL> dofs = ds->getGlobalData<T>(dtt->dofsName);
+  const CFuint minSize = dtt->arraySize/nbRanks;
+  const CFuint maxSize = minSize + dtt->arraySize%nbRanks;
+  cf_assert(minSize*(nbRanks-1) + maxSize == dtt->arraySize);
+  
+  CFuint sendsum = 0;
+  for (CFuint r = 0; r < nbRanks; ++r) {
+    sendcounts[r]   = (r < nbRanks-1) ? minSize : maxSize; 
+    sendIDcounts[r] = sendcounts[r]/dtt->recvStride; // or dtt->sendStride ?
+    sendsum += sendcounts[r];
+  }
+  cf_assert(sendsum == dtt->arraySize);
+}
+      
+//////////////////////////////////////////////////////////////////////////////
+
+    } // namespace ConcurrentCoupler
+
+  } // namespace Numerics
+
+} // namespace COOLFluiD
+
+//////////////////////////////////////////////////////////////////////////////

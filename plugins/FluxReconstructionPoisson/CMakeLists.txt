@@ -1,0 +1,20 @@
+LIST( APPEND FluxReconstructionPoisson_files
+FluxReconstructionPoisson.hh
+ConvDiffJacobFluxReconstructionPoisson.hh
+ConvDiffJacobFluxReconstructionPoisson.cxx
+DiffBndCorrectionsRHSJacobFluxReconstructionPoisson.hh
+DiffBndCorrectionsRHSJacobFluxReconstructionPoisson.cxx
+PoissonJacobBndGradientComputer.hh
+PoissonJacobBndGradientComputer.cxx
+DiffRHSJacobFluxReconstructionPoisson.hh
+DiffRHSJacobFluxReconstructionPoisson.cxx
+PoissonJacobGradientComputer.hh
+PoissonJacobGradientComputer.cxx
+)
+
+LIST ( APPEND FluxReconstructionPoisson_requires_mods Poisson FluxReconstructionMethod FluxReconstructionNavierStokes )
+LIST ( APPEND FluxReconstructionPoisson_cflibs Framework Poisson FluxReconstructionMethod FluxReconstructionNavierStokes ) 
+
+CF_ADD_PLUGIN_LIBRARY ( FluxReconstructionPoisson )
+
+CF_WARN_ORPHAN_FILES()

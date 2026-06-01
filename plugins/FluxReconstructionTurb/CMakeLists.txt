@@ -1,0 +1,67 @@
+LIST ( APPEND FluxReconstructionSA_files
+FluxReconstructionSA.hh
+SA2DSourceTerm.hh
+SA2DSourceTerm.cxx
+)
+
+LIST ( APPEND FluxReconstructionSA_cflibs FluxReconstructionMethod FluxReconstructionNavierStokes NavierStokes SA )
+LIST ( APPEND FluxReconstructionSA_requires_mods FluxReconstructionMethod FluxReconstructionNavierStokes NavierStokes SA )
+
+LIST ( APPEND FluxReconstructionKOmega_files
+FluxReconstructionKOmega.hh
+KOmega2DSourceTerm.hh
+KOmega2DSourceTerm.cxx
+KLogOmega2DSourceTerm.hh
+KLogOmega2DSourceTerm.cxx
+KLogOmega3DSourceTerm.hh
+KLogOmega3DSourceTerm.cxx
+ConvDiffJacobFluxReconstructionTurb.hh
+ConvDiffJacobFluxReconstructionTurb.cxx
+ConvDiffLLAVFluxReconstructionTurb.hh
+ConvDiffLLAVFluxReconstructionTurb.cxx
+ConvDiffLLAVJacobFluxReconstructionTurb.hh
+ConvDiffLLAVJacobFluxReconstructionTurb.cxx
+DiffBndCorrectionsRHSJacobFluxReconstructionTurb.hh
+DiffBndCorrectionsRHSJacobFluxReconstructionTurb.cxx
+DiffBndCorrectionsRHSFluxReconstructionTurb.hh
+DiffBndCorrectionsRHSFluxReconstructionTurb.cxx
+)
+
+LIST ( APPEND FluxReconstructionKOmega_cflibs FluxReconstructionMethod FluxReconstructionNavierStokes NavierStokes KOmega )
+LIST ( APPEND FluxReconstructionKOmega_requires_mods FluxReconstructionMethod FluxReconstructionNavierStokes NavierStokes KOmega )
+
+LIST ( APPEND FluxReconstructionGReKO_files
+FluxReconstructionGReKO.hh
+NavierStokesGReKO2DSourceTerm_Lang.hh
+NavierStokesGReKO2DSourceTerm_Lang.cxx
+NavierStokesGReKO3DSourceTerm_Lang.hh
+NavierStokesGReKO3DSourceTerm_Lang.cxx
+)
+
+LIST ( APPEND FluxReconstructionGReKO_cflibs NavierStokes GReKO FluxReconstructionMethod FluxReconstructionNavierStokes FluxReconstructionKOmega )
+LIST ( APPEND FluxReconstructionGReKO_requires_mods NavierStokes GReKO FluxReconstructionMethod FluxReconstructionNavierStokes FluxReconstructionKOmega )
+
+LIST ( APPEND FluxReconstructionGammaAlpha_files
+FluxReconstructionGammaAlpha.hh
+GammaAlpha2DSourceTerm.hh
+GammaAlpha2DSourceTerm.cxx
+GammaAlpha3DSourceTerm.hh
+GammaAlpha3DSourceTerm.cxx
+DiffBndCorrectionsRHSJacobFluxReconstructionGammaAlpha.hh
+DiffBndCorrectionsRHSJacobFluxReconstructionGammaAlpha.cxx
+DiffBndCorrectionsRHSFluxReconstructionGammaAlpha.hh
+DiffBndCorrectionsRHSFluxReconstructionGammaAlpha.cxx
+GammaAlphaJacobBndGradientComputer.hh
+GammaAlphaJacobBndGradientComputer.cxx
+GammaAlphaBndGradientComputer.hh
+GammaAlphaBndGradientComputer.cxx
+)
+
+LIST ( APPEND FluxReconstructionGammaAlpha_cflibs NavierStokes GammaAlpha FluxReconstructionMethod FluxReconstructionNavierStokes FluxReconstructionKOmega FluxReconstructionSA )
+LIST ( APPEND FluxReconstructionGammaAlpha_requires_mods NavierStokes GammaAlpha FluxReconstructionMethod FluxReconstructionNavierStokes FluxReconstructionKOmega FluxReconstructionSA )
+
+CF_ADD_PLUGIN_LIBRARY ( FluxReconstructionSA )
+CF_ADD_PLUGIN_LIBRARY ( FluxReconstructionKOmega )
+CF_ADD_PLUGIN_LIBRARY ( FluxReconstructionGReKO )
+CF_ADD_PLUGIN_LIBRARY ( FluxReconstructionGammaAlpha )
+CF_WARN_ORPHAN_FILES()

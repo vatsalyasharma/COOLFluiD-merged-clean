@@ -1,0 +1,121 @@
+//////////////////////////////////////////////////////////////////////////////
+
+namespace COOLFluiD {
+
+  namespace Physics {
+
+    namespace KOmega {
+
+//////////////////////////////////////////////////////////////////////////////
+
+template <typename BASE, int SGROUP>
+NavierStokesKLogOmegaSSTVarSet<BASE, SGROUP>::NavierStokesKLogOmegaSSTVarSet
+(const std::string& name, Common::SafePtr<Framework::PhysicalModelImpl> model) :
+  NavierStokesKLogOmegaBSLVarSet<BASE, SGROUP>(name, model)
+{
+}
+      
+//////////////////////////////////////////////////////////////////////////////
+
+template <typename BASE, int SGROUP>
+NavierStokesKLogOmegaSSTVarSet<BASE, SGROUP>::~NavierStokesKLogOmegaSSTVarSet()
+{
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+template <typename BASE, int SGROUP>
+void NavierStokesKLogOmegaSSTVarSet<BASE, SGROUP>::setModelCoefficients()
+{
+  NavierStokesKLogOmegaBSLVarSet<BASE, SGROUP>::setModelCoefficients();
+  
+  //Modified k-omega coeficients for SST
+  this->_sigmaK1 = 0.85;
+}
+      
+//////////////////////////////////////////////////////////////////////////////
+
+template <typename BASE, int SGROUP>
+CFreal NavierStokesKLogOmegaSSTVarSet<BASE, SGROUP>::getTurbDynViscosityFromGradientVars
+(const RealVector& state, const std::vector<RealVector*>& gradients)
+{
+  cf_assert(this->_wallDistance >= 0.);
+  //@todo put this here??
+  cf_assert(gradients.size() > 0);
+    
+  CFreal mut = 0.;
+  if((this->_wallDistance > 0.) && (gradients.size() > 0))
+  {
+    const CFreal a1 = 0.31;
+
+    const CFreal rho = this->getDensity(state);
+    const CFreal K = std::max(state[this->_kID],0.0);
+    const CFreal Omega = std::exp(state[this->_kID+1]);
+//    CFreal vorticity = 0.;
+//    if (Framework::PhysicalModelStack::getActive()->getDim() == 2) {
+//      vorticity = fabs((*(gradients[this->_vID]))[XX] - (*(gradients[this->_uID]))[YY]);
+//    }
+//    else {
+//      vorticity = sqrt( sq((*(gradients[this->_wID]))[YY] - (*(gradients[this->_vID]))[ZZ]) +
+//			sq((*(gradients[this->_uID]))[ZZ] - (*(gradients[this->_wID]))[XX]) +
+//			sq((*(gradients[this->_vID]))[XX] - (*(gradients[this->_uID]))[YY]) );
+//    }
+    
+    CFreal strain = 0.0;
+    
+    const CFreal gradU_X = (*(gradients[1]))[XX];
+    const CFreal gradU_Y = (*(gradients[1]))[YY];
+    const CFreal gradV_X = (*(gradients[2]))[XX];
+    const CFreal gradV_Y = (*(gradients[2]))[YY];
+    
+    if (Framework::PhysicalModelStack::getActive()->getDim() == 2)
+    {
+      const CFreal gradSum = (gradU_Y + gradV_X);
+      strain = std::sqrt(2.*(gradU_X*gradU_X + 0.5*gradSum*gradSum + gradV_Y*gradV_Y));
+    }
+    else
+    {
+      const CFreal gradU_Z = (*(gradients[1]))[ZZ];
+      const CFreal gradV_Z = (*(gradients[2]))[ZZ];
+      const CFreal gradW_X = (*(gradients[3]))[XX];
+      const CFreal gradW_Y = (*(gradients[3]))[YY];
+      const CFreal gradW_Z = (*(gradients[3]))[ZZ];
+      
+      const CFreal gradSumXY = (gradU_Y + gradV_X);
+      const CFreal gradSumXZ = (gradU_Z + gradW_X);
+      const CFreal gradSumYZ = (gradW_Y + gradV_Z);
+      
+      strain = std::sqrt(2.*(gradU_X*gradU_X + gradV_Y*gradV_Y + gradW_Z*gradW_Z) + gradSumXY*gradSumXY + gradSumXZ*gradSumXZ + gradSumYZ*gradSumYZ);
+    }
+    
+    const CFreal mu = this->getLaminarDynViscosityFromGradientVars(state);
+    
+    //@todo here there should be an adimensionalization coef
+    const CFreal arg2_1 = 2. * sqrt(K) / (0.09 * Omega * this->_wallDistance);
+    const CFreal arg2_2 = (500. * mu) / (rho * this->_wallDistance * this->_wallDistance * Omega);
+    const CFreal arg2 = std::max(arg2_1,arg2_2);
+    const CFreal F2 = tanh(arg2*arg2);
+    
+    if (std::max(a1*Omega , strain*F2) == 0.0)
+    {
+      mut =  0.0;
+    }
+    else
+    {
+      mut = (a1 * rho * K )/ std::max(a1*Omega , strain*F2);
+    }
+    
+  }
+  
+  return mut;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+    } // namespace KOmega
+
+  } // namespace Physics
+
+} // namespace COOLFluiD
+
+//////////////////////////////////////////////////////////////////////////////

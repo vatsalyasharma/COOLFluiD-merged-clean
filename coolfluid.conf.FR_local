@@ -1,0 +1,90 @@
+#==================================================================
+# COOLFluiD FR-Only Build Configuration
+#==================================================================
+# Configured for local WSL2 build with system OpenMPI
+# Dependencies from: ../COOLFluiD_FR/deps/install
+#==================================================================
+
+#==================================================================
+# Directories
+#==================================================================
+coolfluid_dir   = /mnt/c/Research/codes/Solvers/COOLFluiD-master
+basebuild_dir   = /mnt/c/Research/codes/Solvers/COOLFluiD-master
+install_dir     = /mnt/c/Research/codes/Solvers/COOLFluiD-master/local_install
+
+#==================================================================
+# Compilers (OpenMPI in ~/.openmpi)
+#==================================================================
+cc              = /home/vatsalya/.openmpi/bin/mpicc
+cxx             = /home/vatsalya/.openmpi/bin/mpicxx
+fc              = /home/vatsalya/.openmpi/bin/mpif90
+
+nofortran       = 0
+withcurl        = 0
+
+#==================================================================
+# Library locations (all in deps/install prefix)
+#==================================================================
+mpi_dir         = /home/vatsalya/.openmpi
+boost_dir       = /mnt/c/Research/codes/Solvers/COOLFluiD_FR/deps/install
+petsc_dir       = /mnt/c/Research/codes/Solvers/COOLFluiD_FR/deps/install
+parmetis_dir    = /mnt/c/Research/codes/Solvers/COOLFluiD_FR/deps/install
+
+#==================================================================
+# Build options
+#==================================================================
+build           = optim
+with_longint    = 1
+allactive       = 1
+with_testcases  = 1
+cmake_generator = make
+
+#==================================================================
+# Disabled features
+#==================================================================
+withcuda        = 0
+
+#==================================================================
+# Compiler flags
+#==================================================================
+optim_cxxflags  = -O3 -g -fPIC -std=c++11
+optim_cflags    = -O3 -g -fPIC
+optim_fflags    = -O3 -g -fPIC
+
+#==================================================================
+# Disable sub-libraries that depend on removed solvers
+# (FiniteVolume, FluctSplit, SpectralFD/FV, DiscontGalerkin, Heat)
+#==================================================================
+
+# AeroCoef sub-libs for removed solvers
+lib_AeroCoefFS          = off
+lib_AeroCoefFVM         = off
+lib_AeroCoefFVMNEQ      = off
+lib_AeroCoefSpectralFD  = off
+lib_AeroCoefDG          = off
+lib_AeroCoefSpectralFV  = off
+lib_DataProcessingHeat  = off
+
+# NewtonMethod sub-libs for removed solvers
+lib_NewtonMethodFVM             = off
+lib_NewtonMethodFVMNavierStokes = off
+lib_NewtonMethodMHD             = off
+
+# BackwardEuler sub-lib for removed solvers
+lib_BackwardEulerMHD    = off
+
+# MeshTools sub-lib for removed solvers
+lib_MeshToolsFVM        = off
+
+# SubSystemCoupler sub-libs for removed physics
+lib_SubSystemCouplerHeat = off
+
+
+with_plato=1
+lib_PlatoI		      = on #NEW ADDITION FOR PLATO
+
+plato_dir =/mnt/c/Research/codes/Solvers/PLATO/plato_install
+plato_includedir =/mnt/c/Research/codes/Solvers/PLATO/plato_install/include
+plato_librarydir =/mnt/c/Research/codes/Solvers/PLATO/plato_install/lib
+
+cgns_dir = /mnt/c/Research/codes/Solvers/Jatayu_v5_1/libs/cgns_install

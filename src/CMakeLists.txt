@@ -1,0 +1,12 @@
+SET ( CF_KERNEL_MODS logcpp Common Config Environment MathTools Framework ShapeFunctions )
+
+FOREACH( ADIR ${CF_KERNEL_MODS} )
+    LOGVERBOSE ("\# KERNEL MODULE [${ADIR}]")
+    ADD_SUBDIRECTORY (${ADIR})
+ENDFOREACH( ADIR ${CF_KERNEL_MODS} )
+
+IF (CF_ENABLE_UNITTESTS)
+ADD_SUBDIRECTORY ( UnitTests )
+LOGVERBOSE ( "\#  ADDING UNITTEST MODULE [UnitTests]")
+ENDIF()
+

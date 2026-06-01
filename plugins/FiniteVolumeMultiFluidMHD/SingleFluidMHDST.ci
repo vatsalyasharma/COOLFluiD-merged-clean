@@ -1,0 +1,714 @@
+#include "Framework/PhysicalChemicalLibrary.hh"
+#include "Framework/PhysicalConsts.hh"
+#include "Common/CFLog.hh"
+#include "Framework/GeometricEntity.hh"
+#include "Common/NoSuchValueException.hh"
+#include "FiniteVolume/ComputeDiffusiveFlux.hh"
+#include "FiniteVolume/DerivativeComputer.hh"
+
+//////////////////////////////////////////////////////////////////////////////
+
+namespace COOLFluiD {
+
+  namespace Numerics {
+
+    namespace FiniteVolume {
+
+//////////////////////////////////////////////////////////////////////////////
+
+template <class UPDATEVAR>
+SingleFluidMHDST<UPDATEVAR>::SingleFluidMHDST(const std::string& name) :
+  ComputeSourceTermFVMCC(name),
+  _varSet(CFNULL),
+  _nstates(CFNULL),
+  _ys(),
+  _physicalData(),
+  _temp(),
+  _states(),
+  _values(),
+  _NonInducedEMField(),
+  _J(),
+  _dummyGradients(),
+  _massSource(),
+  _Btotal(),
+  _Etotal(),
+  _gradBx(),
+  _gradBy(),
+  _gradBz()
+{
+  addConfigOptionsTo(this);
+  
+  //_electricalResistivity = 1.408e4;  // [Linker et al. 1999] // 0.150886049694899;
+  //_electricalResistivity = 1e-5; // 8.0e-15; // Ohm x meters
+  setParameter("electricalResistivity",&_electricalResistivity);
+  setParameter("Lorentzforce",&_Lorentzforce);
+  setParameter("SourceAmpere",&_SourceAmpere);
+  setParameter("Gravitation",&_Gravitation);
+  setParameter("JdotE",&_JdotE);
+  setParameter("Viscosity",&_Viscosity);
+  setParameter("rhogV",&_rhogV);
+  setParameter("ManchesterHeatingTerm",&_ManchesterHeatingTerm);
+  setParameter("PetsovHeatingTerm",&_PetsovHeatingTerm);
+
+}
+      
+//////////////////////////////////////////////////////////////////////////////
+
+template <class UPDATEVAR>
+SingleFluidMHDST<UPDATEVAR>::~SingleFluidMHDST()
+{
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+template <class UPDATEVAR>
+std::vector<Common::SafePtr<Framework::BaseDataSocketSource> >
+SingleFluidMHDST<UPDATEVAR>::providesSockets()
+{
+  std::vector<Common::SafePtr<Framework::BaseDataSocketSource> > result = 
+    ComputeSourceTermFVMCC::providesSockets();
+  //result.push_back(&socket_GammaIon);
+  //result.push_back(&socket_GammaRec);
+
+  return result;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+template <class UPDATEVAR>
+void SingleFluidMHDST<UPDATEVAR>::defineConfigOptions(Config::OptionList& options)
+{
+  options.template addConfigOption< CFreal,Config::DynamicOption<> >
+     ("electricalResistivity", "electrical Resistivity used in Ohm's law");
+  options.template addConfigOption< CFint,Config::DynamicOption<> >
+     ("Lorentzforce", "Lorentzforce used in momentum equation");
+  options.template addConfigOption< CFint,Config::DynamicOption<> >
+     ("SourceAmpere", "SourceAmpere used in Ampere's law");
+  options.template addConfigOption< CFint,Config::DynamicOption<> >
+     ("Gravitation", "Gravitation used in momentum equation");
+  options.template addConfigOption< CFint,Config::DynamicOption<> >
+     ("JdotE", "JdotE used in energy equation");
+  options.template addConfigOption< CFint,Config::DynamicOption<> >
+     ("Viscosity", "Viscosity used in energy equation");
+  options.template addConfigOption< CFint,Config::DynamicOption<> >
+     ("rhogV", "Gravitational potential used in energy equation");
+  options.template addConfigOption< CFint,Config::DynamicOption<> >
+     ("PetsovHeatingTerm", "Petsov heating term used in energy equation");
+  options.template addConfigOption< CFint,Config::DynamicOption<> >
+     ("ManchesterHeatingTerm", "Manchester heating used in energy equation");
+}
+
+
+
+//////////////////////////////////////////////////////////////////////////////
+
+template <class UPDATEVAR>
+void SingleFluidMHDST<UPDATEVAR>::setup()
+{
+  using namespace std;
+  using namespace COOLFluiD::Common;
+  using namespace COOLFluiD::Framework;
+  
+  ComputeSourceTermFVMCC::setup();
+  
+  _varSet = this->getMethodData().getUpdateVar().template d_castTo<UPDATEVAR>();
+  _varSet->getModel()->resizePhysicalData(_physicalData);
+  cf_assert(_varSet.isNotNull());
+  
+  DataHandle<CFreal> normals = this->socket_normals.getDataHandle();
+  _nstates = _sockets.template getSocketSink<RealVector>("nstates")->getDataHandle();
+  //_isOutward = this->socket_isOutward.getDataHandle();
+  
+  SafePtr<typename UPDATEVAR::PTERM> term = _varSet->getModel();
+  const CFuint nbSpecies = term->getNbScalarVars(0);
+  _ys.resize(nbSpecies);
+  
+   // Get number of cells  
+  Common::SafePtr<Common::ConnectivityTable<CFuint> > cells =
+    MeshDataStack::getActive()->getConnectivity("cellStates_InnerCells");
+  const CFuint nbCells = cells->nbRows();
+  //socket_GammaIon.getDataHandle().resize(nbCells);
+  //socket_GammaRec.getDataHandle().resize(nbCells);
+  
+  //DataHandle<CFreal> GammaIon = socket_GammaIon.getDataHandle();
+  //DataHandle<CFreal> GammaRec = socket_GammaRec.getDataHandle();
+  //GammaIon.resize(nbCells);
+  //GammaIon = 0;
+  //GammaRec.resize(nbCells);
+  //GammaRec = 0;  
+
+  _temp.resize(PhysicalModelStack::getActive()->getNbEq());
+
+  const CFuint maxNbNodesIn3DCV = 8; // what value to put here? 4 in Hartmann case
+  _states.reserve(maxNbNodesIn3DCV);
+  
+  SafePtr<DerivativeComputer> derComput = this->getMethodData().getDerivativeComputer();
+  const CFuint nbNodesInControlVolume = derComput->getMaxNbVerticesInControlVolume();
+  _values.resize(PhysicalModelStack::getActive()->getNbEq(), nbNodesInControlVolume);
+  
+  _NonInducedEMField.resize(6);
+  _J.resize(3);
+  _massSource.resize(2);
+  _Btotal.resize(3);  
+  _Etotal.resize(3);
+
+  _gradBx.resize(3,0.);
+  _gradBy.resize(3,0.);
+  _gradBz.resize(3,0.);
+
+
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+template <class UPDATEVAR>
+void SingleFluidMHDST<UPDATEVAR>::computeSource
+(Framework::GeometricEntity *const element, RealVector& source, RealMatrix& jacobian)
+{
+  using namespace std;
+  using namespace COOLFluiD::Framework;
+  using namespace COOLFluiD::Common;
+  using namespace COOLFluiD::MathTools;
+  
+  SafePtr<typename UPDATEVAR::PTERM> term = _varSet->getModel();
+  const vector<State*>* const states = element->getStates();
+  const CFuint elemID = element->getID();
+  cf_assert(states->size() == 1);
+  
+  const CFuint firstVelocity = term->getFirstScalarVar(1); 
+  //cout << endl << "firstVelocity index = " << firstVelocity << endl;
+  State *const currState = (*states)[0];   
+  _varSet->computePhysicalData(*(*states)[0], _physicalData);
+
+  const bool is2DHalf = PhysicalModelStack::getActive()->getImplementor()->is2DHalf();
+  if(is2DHalf || PhysicalModelStack::getActive()->getDim() == 2)
+  {
+    _NonInducedEMField = _varSet->getModel()->getNonInducedEMField
+      (currState->getCoordinates()[XX], currState->getCoordinates()[YY],0.); //The third component is null
+  }
+  else
+  {
+    _NonInducedEMField = _varSet->getModel()->getNonInducedEMField
+      (currState->getCoordinates()[XX], currState->getCoordinates()[YY], currState->getCoordinates()[ZZ]); //The third component is null
+  }
+
+
+
+// This part for computing temperature and density gradients:
+const CFuint totalNbEqs = PhysicalModelStack::getActive()->getNbEq();
+//cout << "Nbeqns = " << totalNbEqs << endl;
+
+//const CFuint elemID = element->getID();
+//cout << "elemiD = " << elemID << endl;
+this->m_useGradientLS = true;
+
+CFreal dTdx = 0.;
+CFreal dTdy = 0.;
+CFreal dTdz = 0.;
+CFreal drhodx = 0.;
+CFreal drhody = 0.;
+CFreal drhodz = 0.;
+CFreal dvxdx = 0.;
+CFreal dvxdy = 0.;
+CFreal dvxdz = 0.;
+CFreal dvydx = 0.;
+CFreal dvydy = 0.;
+CFreal dvydz = 0.;
+CFreal dvzdx = 0.;
+CFreal dvzdy = 0.;
+CFreal dvzdz = 0.;
+if (this->m_useGradientLS && this->m_gradientsExist) {
+      //const CFuint start = elemID*totalNbEqs;
+      const CFuint start = elemID*13;
+      const CFuint TID = 12;
+      const CFuint rhoID = 8;
+      const CFuint vxID = 9;
+      const CFuint vyID = 10;
+      const CFuint vzID = 11;
+      const CFuint BxID = 0;
+      const CFuint ByID = 1;
+      const CFuint BzID = 2;
+
+      dTdx = this->m_ux[start+TID];
+      //cout << "dTdx = " << dTdx << endl;
+      dTdy = this->m_uy[start+TID];
+      //cout << "dTdy = " << dTdy << endl;
+      dTdz = this->m_uz[start+TID];
+      //cout << "dTdz = " << dTdz << endl;
+      drhodx = this->m_ux[start+rhoID];
+      //cout << "drdx = " << drhodx << endl;
+      drhody = this->m_uy[start+rhoID];
+      //cout << "drdy = " << drhody << endl;
+      drhodz = this->m_uz[start+rhoID];
+
+      dvxdx = this->m_ux[start+vxID];
+      dvxdy = this->m_uy[start+vxID];
+      dvxdz = this->m_uz[start+vxID];
+      dvydx = this->m_ux[start+vyID];
+      dvydy = this->m_uy[start+vyID];
+      dvydz = this->m_uz[start+vyID];
+      dvzdx = this->m_ux[start+vzID];
+      dvzdy = this->m_uy[start+vzID];
+      dvzdz = this->m_uz[start+vzID];
+      //cout << "drdx = " << drhodz << endl;
+      // dVdR = this->m_uy[start+vID];
+      // dVdR = this->m_uz[start+vID];
+      CFLog(DEBUG_MED, "NavierStokes2DAxiSourceTerm::computeSource() => LS gradient in cell [" <<
+            elemID << " ] => dTdx = [" << dTdx << "\n");
+    }
+  
+  //   RealVector& refData = _varSet->getModel()->getReferencePhysicalData();
+  DataHandle<CFreal> volumes = socket_volumes.getDataHandle();
+  
+  const EquationSubSysDescriptor& eqSS = PhysicalModelStack::getActive()->getEquationSubSysDescriptor();
+  //const CFuint totalNbEqs = PhysicalModelStack::getActive()->getNbEq();	// Maxwell's Eqs.+ Multifluid NavierStokes Eqs.
+  const CFuint nbEqs = eqSS.getNbEqsSS();  				
+  const CFuint iEqSS = eqSS.getEqSS();
+
+
+
+
+
+  
+  // this is needed by both source terms
+  //computeElectricCurrent();
+  const CFuint BxID = 0;
+  const CFuint ByID = 1;
+  const CFuint BzID = 2;
+  const CFuint gradBxID = elemID*totalNbEqs + BxID;
+  const CFuint gradByID = elemID*totalNbEqs + ByID;
+  const CFuint gradBzID = elemID*totalNbEqs + BzID;
+  _gradBx[XX] = this->m_ux[gradBxID];
+  _gradBx[YY] = this->m_uy[gradBxID];
+  _gradBy[XX] = this->m_ux[gradByID];
+  _gradBy[YY] = this->m_uy[gradByID];
+  _gradBx[ZZ] = this->m_uz[gradBxID];
+  _gradBy[ZZ] = this->m_uz[gradByID];
+  _gradBz[XX] = this->m_ux[gradBzID];
+  _gradBz[YY] = this->m_uy[gradBzID];
+  _gradBz[ZZ] = this->m_uz[gradBzID];
+  const CFreal mu0 = 1.25663706212e-6; // N/A^2
+  const CFreal Jx = (_gradBz[YY] - _gradBy[ZZ])/mu0;
+  const CFreal Jy = (_gradBx[ZZ] - _gradBz[XX])/mu0;
+  const CFreal Jz = (_gradBy[XX] - _gradBx[YY])/mu0;
+  _J[XX] = Jx;
+  _J[YY] = Jy;
+  _J[ZZ] = Jz;
+
+
+
+
+
+
+  
+  
+  const CFreal eta = _electricalResistivity;
+  CFreal nu = 3.359e12; // BOTH VALUES FROM LINKER ET AL
+  CFreal Jtot = std::sqrt(_J[XX]*_J[XX] + _J[YY]*_J[YY] + _J[ZZ]*_J[ZZ]);
+  
+  if (nbEqs == totalNbEqs || iEqSS == 0) {
+    //Compute the source term
+    /// MAXWELL
+    //const CFreal ovEpsilon = 1./term->getPermittivity(); OLD way of getting the permittivity
+    const CFreal c_e = term->getLightSpeed();
+    const CFreal mu0 = term->getPermeability();
+    const CFreal ovEpsilon = c_e*c_e*mu0;
+    
+
+
+    source[0] = 0;   //x-Faraday's Law
+    source[1] = 0;   //y-Faraday's Law
+    source[2] = 0;   //z-Faraday's Law
+
+
+  if (_SourceAmpere) {
+
+    source[3] = -_J[XX]*ovEpsilon;   //x-Ampere's Law
+    source[4] = -_J[YY]*ovEpsilon;   //y-Ampere's Law
+    source[5] = -_J[ZZ]*ovEpsilon;   //z-Ampere's Law
+  }
+  else {
+    source[3] = 0;   //x-Ampere's Law
+    source[4] = 0;   //y-Ampere's Law
+    source[5] = 0;   //z-Ampere's Law
+  }
+
+    source[6] = 0;   // i.e. no charges
+    source[7] = 0;
+   //std::cout << "-j/eps = " << -_J[XX]*ovEpsilon << endl;
+    //   std::cout<<"SingleFluidMHDST::computeSource -> permittivity = "<< term->getPermittivity() <<"\n";
+  }
+  
+  if (nbEqs == totalNbEqs || iEqSS == 1) {
+    // Compute the source terms
+    //computeMassReactionsEnergySourceTerm();
+    //computeCollisionalMomentumEnergy();
+    
+      
+    source[8] = 0;
+
+    //CFreal rho  = _physicalData[UPDATEVAR::PTERM::RHO];
+    CFuint endEM = 8;
+    //CFreal rho_pd  = _physicalData[endEM];
+    CFreal rho = (*currState)[8];
+    //cout << "rho in kg/m3 as indexed by endEM = " << rho_pd << endl;
+    //cout << "rho in kg/m3 as indexed by UPDATEVAR::PTERM::RHO = " << rho << endl << "... are they the same?" << endl;
+    CFreal x = currState->getCoordinates()[XX];
+    //std::cout << "\n" << endl;
+    //std::cout << "x = " << x << endl;
+    //std::cout << "\n" << endl;
+    CFreal y = currState->getCoordinates()[YY];
+    CFreal z = currState->getCoordinates()[ZZ];
+    CFreal phi = std::atan2(y,x);
+    CFreal theta = std::atan2(std::sqrt(x*x + y*y),z);
+
+    CFreal GMsun = 1.327474512e20;
+    CFreal r2 = x*x + y*y + z*z;
+    CFreal r = std::sqrt(r2);
+    CFreal fx = -GMsun/r2*rho*std::sin(theta)*std::cos(phi);
+    CFreal fy = -GMsun/r2*rho*std::sin(theta)*std::sin(phi);
+    CFreal fz = -GMsun/r2*rho*std::cos(theta);
+
+
+      //MOMENTUM
+      const CFreal LorentzforceX =  _J[YY]*_Btotal[ZZ] - _J[ZZ]*_Btotal[YY];		//Electromagnetic momentum X + grav. source term + rho_charge*_Etotal[XX] // determine rho_charge first
+      const CFreal LorentzforceY =  _J[ZZ]*_Btotal[XX] - _J[XX]*_Btotal[ZZ];		//Electromagnetic momentum Y + ditto + rho_charge*_Etotal[YY]
+      const CFreal LorentzforceZ =  _J[XX]*_Btotal[YY] - _J[YY]*_Btotal[XX];		//Electromagnetic momentum Z + ditto rho_charge*_Etotal[ZZ]
+
+
+/*
+
+      Jx = (_gradBz[YY] - _gradBy[ZZ])/mu0;
+      Jy = (_gradBx[ZZ] - _gradBz[XX])/mu0;
+      Jz = (_gradBy[XX] - _gradBx[YY])/mu0;
+
+      CFreal Ex = -(v*BzTotal - w*ByTotal);
+      CFreal Ey = -(w*BxTotal - u*BzTotal);
+      CFreal Ez = -(u*ByTotal - v*BxTotal);
+
+
+      source[8]  = 0.;                                      //Continuity equation
+      source[9]  = Jy*BzTotal - Jz*ByTotal;                //x-momentum equation
+      source[10] = Jz*BxTotal - Jx*BzTotal;          	  //y-momentum equation
+      source[11] = Jx*ByTotal - Jy*BxTotal;          	  //z-momentum equation
+      source[12] = Jx*Ex + Jy*Ey + Jz*Ez;  //Total Energy
+
+
+*/
+
+      const CFreal gamma = _varSet->getModel()->getGamma();
+      const CFreal K_B = PhysicalConsts::Boltzmann();
+
+      CFreal kB = 1.38064852e-23; // use the definition from the module later
+      CFreal mumH = 2.125091e-27; // mu x m_H
+      
+      //CFreal gradPx = 2*kB*(*currState)[12]/mumH*drhodx + 2*rho/mumH*kB*dTdx;
+      //CFreal gradPy = 2*kB*(*currState)[12]/mumH*drhody + 2*rho/mumH*kB*dTdy;
+      //CFreal gradPz = 2*kB*(*currState)[12]/mumH*drhodz + 2*rho/mumH*kB*dTdz;
+
+     CFreal momX = 0.;
+     CFreal momY = 0.;
+     CFreal momZ = 0.;
+
+
+  if (_Lorentzforce) {
+      momX += LorentzforceX;
+      momY += LorentzforceY;
+      momZ += LorentzforceZ;
+  }
+
+  if (_Gravitation) {
+     momX += fx;
+     momY += fy;
+     momZ += fz;
+  }
+
+      source[9]  = momX;
+      source[10] = momY;
+      source[11] = momZ;
+
+      CFreal Vx = (*currState)[9];
+      //cout << "Vx in m per sec = " << Vx << endl;
+      CFreal Vy = (*currState)[10];
+      //cout << "Vy in m per sec = " << Vy << endl;
+      CFreal Vz = (*currState)[11];
+      //cout << "Vz in m per sec = " << Vz << endl;
+
+
+      // Cooper Downs' heating term:
+    // SIMPLE AXISYMMETRIC HEATING MODEL 1 - Downs et al. 2010: Towards a realistic thermodynamic MHD model
+    // Exponential scale height heating term
+    const CFreal H0 = 7.28e-6; // J m**-3 s**-1, Local heating rate of the quiet Sun at the surface
+    const CFreal RSun = 6.957e8; // m
+    const CFreal lambda = 4.e7;  // m, Heating scale height
+    CFreal Qh1 = H0*std::exp(-(r - RSun)/lambda);
+
+    // B-FIELD WEIGHTED 3-D HEATING MODEL - Petsov et al. 2003
+    // First attempt: Instead of summing /int /psi dV over all tetrahedrons, which has to be done prior to calling this function
+    // we can simply use the constant factor provided by Downs et al. 2010 of 4e-8 J/s T
+    // Then the heating term is simply
+    const CFreal const_Downs2010 = 4.e-8;    
+    CFreal Qh2 = const_Downs2010*std::sqrt(_Btotal[XX]*_Btotal[XX] + _Btotal[YY]*_Btotal[YY] + _Btotal[ZZ]*_Btotal[ZZ]);
+
+
+      CFreal resistiveDiss = _J[XX]*_Etotal[XX] + _J[YY]*_Etotal[YY] + _J[ZZ]*_Etotal[ZZ];
+      CFreal viscDiss = nu*rho*(dvxdx*dvxdx + dvydx*dvydx + dvzdx*dvzdx + dvxdy*dvxdy + dvydy*dvydy + dvzdy*dvzdy + dvxdz*dvxdz + dvydz*dvydz + dvzdz*dvzdz);
+      CFreal Vr = std::sin(theta)*std::cos(phi)*Vx + std::sin(theta)*std::sin(phi)*Vy + std::cos(theta)*Vz;
+      CFreal gravEnergy = -rho*(GMsun/r2)*Vr;
+      //std::cout << "gravEnergy = " << gravEnergy << endl;
+      CFreal emEnergy = resistiveDiss + viscDiss;
+      //std::cout << "J.E = " << resistiveDiss << endl;
+      //std::cout << "nu*rho*nablaV" << viscDiss << endl;
+
+      CFreal EnergySource = 0.;
+      if (_JdotE) {
+          //std::cout << "JdotE activated!" << endl;
+          EnergySource += resistiveDiss;
+      }
+      if (_Viscosity) {
+          //std::cout << "Viscosity activated!" << endl;
+          EnergySource += viscDiss;
+      }
+      if (_rhogV) {
+          //std::cout << "rho g V activated!" << endl;
+          EnergySource += gravEnergy;
+      }
+      if (_PetsovHeatingTerm) {
+        //std::cout << "Petsov heating term activated!" << endl;
+        EnergySource += Qh2;
+      }
+      if (_ManchesterHeatingTerm) {
+        //std::cout << "Manchester heating term activated!" << endl;
+        EnergySource += Qh1;
+      }
+
+
+      source[12] = EnergySource;//resistiveDiss;// Qh1; //gravEnergy + ;
+
+      source *= volumes[elemID]; 
+      
+      // Write the sockets
+      if (!this->getMethodData().isPerturb()) { // Condition to avoid writing when the source is perturbed
+	if(currState->isParUpdatable()) { // Condition to write only once the partition cells
+	  //GammaIon[elemID] = _GammaIon_n;
+	  //GammaRec[elemID] = _GammaRec_i;
+	}
+      }
+}
+}
+//////////////////////////////////////////////////////////////////////////////
+/*
+template <class UPDATEVAR>
+void SingleFluidMHDST<UPDATEVAR>::computeMassReactionsEnergySourceTerm()
+{
+  _GammaIon_n = 0.;
+  _GammaRec_i = 0.;
+  
+  const CFuint firstDensity = _varSet->getModel()->getFirstScalarVar(0);
+  const CFuint firstTemperature = _varSet->getModel()->getFirstScalarVar(2);
+  
+  const CFreal rho  = _physicalData[UPDATEVAR::PTERM::RHO];
+  const CFreal rhoi = rho*_physicalData[firstDensity]; 		// ions density
+  const CFreal rhon = rho*_physicalData[firstDensity + 1];	// neutrals density
+  const CFreal Ti   = _physicalData[firstTemperature];	        // ions Temperature
+  const CFreal Tn   = _physicalData[firstTemperature + 4];      // neutrals Temperature
+  
+  //Molecular Masses
+  //const CFreal me = _varSet->getModel()->getMolecularMass1();;              // Electron's mass [kg] source:Standart Handbook for Electrical Engineerings
+  const CFreal mi = _varSet->getModel()->getMolecularMass3();              // Proton's mass [kg] source:Standart Handbook for Electrical Engineerings
+  const CFreal mn = _varSet->getModel()->getMolecularMass2();              // Neutral's mass [kg] source:Standart Handbook for Electrical Engineerings
+  
+  //electron properties
+  const CFreal ne = rhoi/mi;		   	// Electrically neutral, i.e. ne = ni
+  const CFreal Te = Ti/11604.50520;		// electrons temperature in eV. Thermal equilibrium is assumed Ti = Te
+  
+  //Neutrals and ions properties
+  const CFreal nn = rhon/mn;			// neutral particle per unit volume
+  const CFreal ni = ne;			        // ion particle per unit volume
+  
+  // IONIZATION
+  //constants Related to ionization frequency from [Leake]
+  const CFreal A = 2.91e-14;
+  const CFreal X = 0.232;
+  const CFreal psiIonOvTe = 13.6/Te;
+  const CFreal K = 0.39;
+  
+  const CFreal nuIon = ne*A/(X + psiIonOvTe)*std::pow(psiIonOvTe, K)*std::exp(-psiIonOvTe);  // Ionization freq.
+  _GammaIon_n = -nn*nuIon;
+  
+  // RECOMBINATION
+  //constant related to recombination
+  const CFreal B = 2.6e-19;
+  const CFreal nuRec = ne/std::sqrt(Te)*B;
+  _GammaRec_i = -ni*nuRec;
+  
+  ///TOTAL (particles/m3)
+  const CFreal ionsParticlesRate     = (-_GammaIon_n + _GammaRec_i);
+  const CFreal neutralsParticlesRate = (_GammaIon_n - _GammaRec_i);
+  
+  ///RESULT
+  _massSource[0] = mi*ionsParticlesRate;
+  _massSource[1] = mn*neutralsParticlesRate;
+  
+  const CFreal kB = Framework::PhysicalConsts::Boltzmann(); // Boltzmann constant
+  const CFreal GammaIon_i = - _GammaIon_n;
+  const CFreal GammaRec_n = - _GammaRec_i;
+  
+  const CFreal Qion_i = 1.5*GammaIon_i*kB*Tn;
+  const CFreal Qrec_n = 1.5*GammaRec_n*kB*Ti;
+  
+  _ReactEnergySource[0] = Qion_i - Qrec_n;   //IONS
+  _ReactEnergySource[1] = -Qion_i + Qrec_n;  //NEUTRALS
+}
+*/
+//////////////////////////////////////////////////////////////////////////////
+
+template <class UPDATEVAR>
+void SingleFluidMHDST<UPDATEVAR>::computeElectricCurrent()
+{
+  const CFreal firstVelocity = _varSet->getModel()->getFirstScalarVar(1);
+  
+  // Total Electromagnetic Field
+  _Btotal[XX] = _physicalData[UPDATEVAR::PTERM::BX] + _NonInducedEMField[0];
+  _Btotal[YY] = _physicalData[UPDATEVAR::PTERM::BY] + _NonInducedEMField[1];
+  _Btotal[ZZ] = _physicalData[UPDATEVAR::PTERM::BZ] + _NonInducedEMField[2];
+  _Etotal[XX] = _physicalData[UPDATEVAR::PTERM::EX] + _NonInducedEMField[3];
+  _Etotal[YY] = _physicalData[UPDATEVAR::PTERM::EY] + _NonInducedEMField[4];
+  _Etotal[ZZ] = _physicalData[UPDATEVAR::PTERM::EZ] + _NonInducedEMField[5];
+  
+  // Ion velocities
+  const CFreal ui = _physicalData[firstVelocity];
+  const CFreal vi = _physicalData[firstVelocity + 1]; 
+  const CFreal wi = _physicalData[firstVelocity + 2];
+  
+  const CFreal eta = _electricalResistivity;
+  const CFreal sigma = 1/eta;
+  //std::cout << "sigma = " << sigma << "\n";
+  
+  const CFreal Jx = sigma*(_Etotal[XX] + vi*_Btotal[ZZ] - wi*_Btotal[YY]);
+  const CFreal Jy = sigma*(_Etotal[YY] + wi*_Btotal[XX] - ui*_Btotal[ZZ]);  
+  const CFreal Jz = sigma*(_Etotal[ZZ] + ui*_Btotal[YY] - vi*_Btotal[XX]);  
+  //const CFuint elemID = element->getID();
+
+/*  const CFuint BxID = 0;*/
+/*  const CFuint ByID = 1;*/
+/*  const CFuint BzID = 2;*/
+/*  const CFuint gradBxID = elemID*totalNbEqs + BxID;*/
+/*  const CFuint gradByID = elemID*totalNbEqs + ByID;*/
+/*  const CFuint gradBzID = elemID*totalNbEqs + BzID;*/
+/*  _gradBx[XX] = this->m_ux[gradBxID];*/
+/*  _gradBx[YY] = this->m_uy[gradBxID];*/
+
+/*  _gradBy[XX] = this->m_ux[gradByID];*/
+/*  _gradBy[YY] = this->m_uy[gradByID];*/
+
+/*  _gradBx[ZZ] = this->m_uz[gradBxID];*/
+/*  _gradBy[ZZ] = this->m_uz[gradByID];*/
+
+/*  _gradBz[XX] = this->m_ux[gradBzID];*/
+/*  _gradBz[YY] = this->m_uy[gradBzID];*/
+/*  _gradBz[ZZ] = this->m_uz[gradBzID];*/
+
+
+
+
+
+  //const CFreal mu0 = 1.25663706212e-6; // N/A^2
+
+  //const CFreal Jx = (_gradBz[YY] - _gradBy[ZZ])/mu0;
+  //const CFreal Jy = (_gradBx[ZZ] - _gradBz[XX])/mu0;
+  //const CFreal Jz = (_gradBy[XX] - _gradBx[YY])/mu0;
+
+
+
+
+  _J[XX] = Jx;
+  _J[YY] = Jy;
+  _J[ZZ] = Jz;
+
+}
+
+//////////////////////////////////////////////////////////////////////////////
+/*
+template <class UPDATEVAR>
+void SingleFluidMHDST<UPDATEVAR>::computeCollisionalMomentumEnergy()
+{
+  const CFuint firstDensity = _varSet->getModel()->getFirstScalarVar(0);
+  const CFreal firstVelocity = _varSet->getModel()->getFirstScalarVar(1);
+  const CFuint firstTemperature = _varSet->getModel()->getFirstScalarVar(2);
+  
+  // particles density, temperature
+  const CFreal rho = _physicalData[UPDATEVAR::PTERM::RHO];
+  const CFreal rhoi = rho*_physicalData[firstDensity]; 			//ions density
+  const CFreal rhon = rho*_physicalData[firstDensity + 1]; 		//neutrals density
+  
+  const CFreal Ti = _physicalData[firstTemperature];
+  const CFreal Tn = _physicalData[firstTemperature + 4];
+  
+  const CFreal ui = _physicalData[firstVelocity];
+  const CFreal vi = _physicalData[firstVelocity + 1]; 
+  const CFreal wi = _physicalData[firstVelocity + 2];
+  const CFreal un = _physicalData[firstVelocity + 3];
+  const CFreal vn = _physicalData[firstVelocity + 4];
+  const CFreal wn = _physicalData[firstVelocity + 5];
+  
+  // particle mass 
+  const CFreal mi = _varSet->getModel()->getMolecularMass3();  // Proton's mass [kg] source:Standart Handbook for Electrical Engineerings
+  const CFreal mn = _varSet->getModel()->getMolecularMass2();  // Neutral's mass [kg] source:Standart Handbook for Electrical Engineerings
+  
+  // particles per volume
+  const CFreal ni = rhoi/mi;
+  const CFreal nn = rhon/mn;  
+  
+  //parameters
+  const CFreal m_in = mi*mn/(mi + mn);
+  const CFreal Sigma_in = 1.41e-19;		//collisional cross-section m2 [Leake]
+  const CFreal T_in = (Ti + Tn)/2;
+  const CFreal kB = Framework::PhysicalConsts::Boltzmann(); // Boltzmann constant
+  const CFreal pi = MathTools::MathConsts::CFrealPi(); //Pi number
+  
+  //collision Frequency
+  const CFreal nu_in = nn*Sigma_in*std::sqrt(8.*kB*T_in/(pi*m_in));
+  const CFreal m_n_nu = m_in*ni*nu_in;
+  const CFreal Rin_ix = m_n_nu*(un - ui);
+  const CFreal Rin_iy = m_n_nu*(vn - vi);
+  const CFreal Rin_iz = m_n_nu*(wn - wi);
+  
+  //ions momentum
+  _collMomentumSource[0] = Rin_ix;
+  _collMomentumSource[1] = Rin_iy;
+  _collMomentumSource[2] = Rin_iz;
+  
+  //neutrals momentum
+  _collMomentumSource[3] = -Rin_ix;
+  _collMomentumSource[4] = -Rin_iy; 
+  _collMomentumSource[5] = -Rin_iz;
+  
+  const CFreal kinEnergin_i = 0.5*(Rin_ix*(un - ui) + Rin_iy*(vn - vi) + Rin_iy*(wn - wi)); //exchange due to different kinetic energy
+  const CFreal intEnergin_i = 3.*m_n_nu/mi*kB*(Tn - Ti); // exchange due to different temperatures
+  const CFreal Qin_i = kinEnergin_i + intEnergin_i;  // source in ions energy due to collisions with neutrals
+  
+  _collEnergySource[0] = Qin_i;	  // IONS
+  _collEnergySource[1] = -Qin_i;  // NEUTRALS
+  
+  
+//   if (std::abs(Qin_i) > 1e6){
+//     std::cout <<"kinEnergin_i = "<< kinEnergin_i <<"\n";
+//     std::cout <<"intEnergin_i = "<< intEnergin_i <<"\n";
+//     std::cout <<"(Tn - Ti)    = "<< (Tn - Ti) <<"\n";
+//     std::cout <<"nu_in        = "<< nu_in <<"\n"; 
+//     std::cout <<"Tn           =" << Tn <<"\n";
+//     std::cout <<"Ti           =" << Ti <<"\n";
+    
+//   }
+}
+*/
+//////////////////////////////////////////////////////////////////////////////
+
+    } // namespace FiniteVolume
+
+  } // namespace Numerics
+
+} // namespace COOLFluiD
+
+//////////////////////////////////////////////////////////////////////////////

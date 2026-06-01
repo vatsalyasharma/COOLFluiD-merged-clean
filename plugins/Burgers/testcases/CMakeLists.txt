@@ -1,0 +1,7 @@
+cf_add_case( MPI default PCASE burgersFS.CFcase CASEFILES burgers.thor burgers.SP )
+cf_add_case( MPI 8       PCASE burgersFSCRD.CFcase CASEFILES burgers.thor burgers.SP )
+cf_add_case( MPI 8       PCASE burgersFSHOCRD_BT.CFcase CASEFILES square-fem-p2-1670n.CFmesh )
+cf_add_case( MPI 8       PCASE burgersFSQDPert.CFcase CASEFILES burgersQDPert.thor burgersQDPert.SP )
+cf_add_case( MPI 1       PCASE burgersFS_SpaceTime.CFcase CASEFILES burgers.thor burgers.SP )
+cf_add_case( MPI 8       PCASE burgersFVM.CFcase CASEFILES burgers.thor burgers.SP )
+cf_add_case( MPI 8       PCASE burgersFVMQDPert.CFcase CASEFILES burgersQDPert.thor burgersQDPert.SP )

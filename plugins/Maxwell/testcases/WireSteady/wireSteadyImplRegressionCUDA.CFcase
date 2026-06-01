@@ -1,0 +1,151 @@
+# COOLFluiD CFcase file
+#
+# Comments begin with "#"
+# Meta Comments begin with triple "#"
+#
+# Residual = -16.375201
+#
+#CFEnv.ErrorOnUnusedConfig = true
+#CFEnv.TraceToStdOut = true
+
+CudaDeviceManager.NbThreadsPerBlock = 64
+
+# SubSystem Modules
+Simulator.Modules.Libs =  libCFmeshFileWriter libCFmeshFileReader libNewtonMethod libPetscI libTecplotWriter libMaxwell libForwardEuler libBackwardEuler libFiniteVolume libGambit2CFmesh libFiniteVolumeMaxwell libFiniteVolumeCUDA
+
+# SubSystem Parameters
+Simulator.Paths.WorkingDir = plugins/Maxwell/testcases/WireSteady/
+Simulator.Paths.ResultsDir = ./RESULTS_originalCUDA
+
+Simulator.SubSystem.Default.PhysicalModelType = Maxwell2DProjection
+Simulator.SubSystem.Maxwell2DProjection.ConvTerm.divECleaningConst = 0
+Simulator.SubSystem.Maxwell2DProjection.ConvTerm.divBCleaningConst = 1
+Simulator.SubSystem.Maxwell2DProjection.refValues = 1. 1. 1. 1. 1. 1. 1.
+Simulator.SubSystem.Maxwell2DProjection.refLength = 1.0
+
+Simulator.SubSystem.OutputFormat        = CFmesh Tecplot
+Simulator.SubSystem.CFmesh.FileName     = wire.CFmesh
+Simulator.SubSystem.Tecplot.FileName    = wire.plt
+#Simulator.SubSystem.Tecplot.AppendIter  = true
+Simulator.SubSystem.Tecplot.Data.outputVar = Cons
+Simulator.SubSystem.Tecplot.Data.SurfaceTRS = Inlet
+Simulator.SubSystem.Tecplot.SaveRate = 1
+#Simulator.SubSystem.Tecplot.Data.printExtraValues = true
+Simulator.SubSystem.CFmesh.SaveRate = 5
+
+#Simulator.SubSystem.Tecplot.Data.DataHandleOutput.CCSocketNames = divB divE theta Bradial Btheta
+#Simulator.SubSystem.Tecplot.Data.DataHandleOutput.CCVariableNames = divB divE theta Bradial Btheta
+#Simulator.SubSystem.Tecplot.Data.DataHandleOutput.CCBlockSize = 1 1 1 1 1
+#Simulator.SubSystem.Tecplot.WriteSol = WriteSolutionBlockFV
+
+Simulator.SubSystem.StopCondition          = MaxNumberSteps
+Simulator.SubSystem.MaxNumberSteps.nbSteps = 10
+
+#Simulator.SubSystem.StopCondition       = Norm
+#Simulator.SubSystem.Norm.valueNorm      = -8.0
+
+Simulator.SubSystem.Default.listTRS = Inlet Outlet
+
+Simulator.SubSystem.MeshCreator = CFmeshFileReader
+Simulator.SubSystem.CFmeshFileReader.Data.FileName = circle80x110.CFmesh
+Simulator.SubSystem.CFmeshFileReader.convertFrom = Gambit2CFmesh
+Simulator.SubSystem.CFmeshFileReader.Gambit2CFmesh.Discontinuous = true
+Simulator.SubSystem.CFmeshFileReader.Gambit2CFmesh.SolutionOrder = P0
+
+
+
+
+Simulator.SubSystem.ConvergenceMethod = NewtonIterator
+Simulator.SubSystem.NewtonIterator.Data.CFL.Value = 1e6
+#Simulator.SubSystem.NewtonIterator.Data.CFL.ComputeCFL = Interactive
+#Simulator.SubSystem.NewtonIterator.Data.CFL.Function.Def = if(i<500,1.0,min(1e4,cfl*1.05))
+#Simulator.SubSystem.NewtonIterator.StdUpdateSol.Relaxation = 0.1
+#Simulator.SubSystem.NewtonIterator.AbsoluteNormAndMaxIter.MaxIter = 1
+Simulator.SubSystem.NewtonIterator.Data.L2.MonitoredVarID = 0
+
+
+Simulator.SubSystem.LinearSystemSolver = PETSC
+Simulator.SubSystem.LSSNames = BwdEulerLSS
+Simulator.SubSystem.BwdEulerLSS.Data.PCType = PCBJACOBI #PCASM # PCJACOBI #PCASM
+Simulator.SubSystem.BwdEulerLSS.Data.KSPType = KSPGMRES
+Simulator.SubSystem.BwdEulerLSS.Data.MatOrderingType = MATORDERING_RCM
+Simulator.SubSystem.BwdEulerLSS.Data.MaxIter = 60
+#Simulator.SubSystem.BwdEulerLSS.Data.Output = true
+
+#Simulator.SubSystem.BwdEulerLSS.Data.UseAIJ = true
+####### GPU ########
+Simulator.SubSystem.BwdEulerLSS.Data.UseGPU = true
+Simulator.SubSystem.CellCenterFVM.JacobianSparsity = FVMCellCenteredNoBlock
+
+
+
+Simulator.SubSystem.SpaceMethod = CellCenterFVM
+Simulator.SubSystem.CellCenterFVM.ComputeTimeRHS = PseudoSteadyTimeRhs
+
+#Name of the provider at FVMCC_ComputeRhsJacobCell.cu
+Simulator.SubSystem.CellCenterFVM.ComputeRHS = CellNumJacobStegerWarmingMaxwell2DCons #NumJacob
+Simulator.SubSystem.CellCenterFVM.CellNumJacobStegerWarmingMaxwell2DCons.OnGPU = true
+Simulator.SubSystem.CellCenterFVM.CellNumJacobStegerWarmingMaxwell2DCons.NbCellsPerBlock = 16
+
+
+Simulator.SubSystem.CellCenterFVM.SetupCom = LeastSquareP1Setup
+Simulator.SubSystem.CellCenterFVM.SetupNames = Setup1
+Simulator.SubSystem.CellCenterFVM.Setup1.stencil = FaceVertexPlusGhost
+Simulator.SubSystem.CellCenterFVM.UnSetupCom = LeastSquareP1UnSetup
+Simulator.SubSystem.CellCenterFVM.UnSetupNames = UnSetup1
+
+#Simulator.SubSystem.CellCenterFVM.Data.PolyRec = Constant
+Simulator.SubSystem.CellCenterFVM.Data.PolyRec = LinearLS2D
+Simulator.SubSystem.CellCenterFVM.Data.LinearLS2D.gradientFactor = 0.
+Simulator.SubSystem.CellCenterFVM.Data.LinearLS2D.limitRes = -1.2
+Simulator.SubSystem.CellCenterFVM.Data.Limiter = BarthJesp2D
+Simulator.SubSystem.CellCenterFVM.Data.BarthJesp2D.useFullStencil = true
+
+
+Simulator.SubSystem.CellCenterFVM.Data.FluxSplitter = StegerWarmingMaxwellProjection2D #MacCormackMaxwell2DProjection
+
+
+Simulator.SubSystem.CellCenterFVM.Data.UpdateVar   = Cons
+Simulator.SubSystem.CellCenterFVM.Data.SolutionVar = Cons
+Simulator.SubSystem.CellCenterFVM.Data.LinearVar   = Cons
+
+Simulator.SubSystem.CellCenterFVM.InitComds = InitState
+Simulator.SubSystem.CellCenterFVM.InitNames = InField
+
+Simulator.SubSystem.CellCenterFVM.InField.applyTRS = InnerFaces
+Simulator.SubSystem.CellCenterFVM.InField.Vars = x y
+Simulator.SubSystem.CellCenterFVM.InField.Def = 0. 0. 0. 0. 0. 0. 0. 0.
+
+Simulator.SubSystem.CellCenterFVM.BcComds = SuperInletFVMCC SuperInletFVMCC
+Simulator.SubSystem.CellCenterFVM.BcNames = Jet1 Jet2
+
+Simulator.SubSystem.CellCenterFVM.Jet1.applyTRS = Inlet
+Simulator.SubSystem.CellCenterFVM.Jet1.Vars = x y
+Simulator.SubSystem.CellCenterFVM.Jet1.Def =\
+                                        if(x>0,-1.275e-2*sin(atan(y/x)),1.275e-2*sin(atan(y/x))) \
+                                        if(x>0.,1.275e-2*cos(atan(y/x)),-1.275e-2*cos(atan(y/x))) \
+                                        0. \
+                                        0. \
+                                        0. \
+                                        0. \ 
+					0. \
+					0. 
+					
+                                        
+Simulator.SubSystem.CellCenterFVM.Jet2.applyTRS = Outlet
+Simulator.SubSystem.CellCenterFVM.Jet2.Vars = x y
+Simulator.SubSystem.CellCenterFVM.Jet2.Def = 0. 0. 0. 0. 0. 0. 0. 0.
+                                       
+#############################DATA PROCESSING####################################
+
+#Simulator.SubSystem.DataPreProcessing = DataProcessing
+#Simulator.SubSystem.DataProcessing.Data.updateVar = Cons
+
+###### DIVERGENCE ##
+#Simulator.SubSystem.DataProcessing.Comds = DivMonitoring
+#Simulator.SubSystem.DataProcessing.Names = DivMonitoring
+#Simulator.SubSystem.DataProcessing.ProcessRate = 1
+
+#Simulator.SubSystem.DataProcessing.DivMonitoring.OutputFileDivMonitoring = ./DivMonitoring.plt
+
+

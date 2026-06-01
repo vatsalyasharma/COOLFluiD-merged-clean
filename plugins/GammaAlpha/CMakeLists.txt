@@ -1,0 +1,46 @@
+LIST ( APPEND GammaAlpha_files
+GammaAlpha.hh
+GammaAlphaReactionTerm.cxx
+GammaAlphaReactionTerm.hh
+Euler2DGammaAlphaCons.cxx
+Euler2DGammaAlphaCons.hh
+Euler2DGammaAlphaConsToPuvtInPuvt.cxx
+Euler2DGammaAlphaConsToPuvtInPuvt.hh
+Euler2DGammaAlphaPuvt.cxx
+Euler2DGammaAlphaPuvt.hh
+Euler2DGammaAlphaPuvtToCons.cxx
+Euler2DGammaAlphaPuvtToCons.hh
+Euler2DGammaAlphaPuvtToConsInPuvt.cxx
+Euler2DGammaAlphaPuvtToConsInPuvt.hh
+Euler3DGammaAlphaConsToPuvtInPuvt.cxx
+Euler3DGammaAlphaConsToPuvtInPuvt.hh
+Euler3DGammaAlphaPuvtToCons.cxx
+Euler3DGammaAlphaPuvtToCons.hh
+Euler3DGammaAlphaPuvt.cxx
+Euler3DGammaAlphaPuvt.hh
+Euler3DGammaAlphaCons.cxx
+Euler3DGammaAlphaCons.hh
+NavierStokes2DGammaAlphaBSLPuvt.cxx
+NavierStokes2DGammaAlphaBSLPuvt.hh
+NavierStokes2DGammaAlphaPuvt.cxx
+NavierStokes2DGammaAlphaPuvt.hh
+NavierStokes2DGammaAlphaSSTPuvt.cxx
+NavierStokes2DGammaAlphaSSTPuvt.hh
+NavierStokesGammaAlphaPhysicalModel.ci
+NavierStokesGammaAlphaPhysicalModel.cxx
+NavierStokesGammaAlphaPhysicalModel.hh
+NavierStokes3DGammaAlphaPuvt.cxx
+NavierStokes3DGammaAlphaPuvt.hh
+NavierStokes3DGammaAlphaBSLPuvt.cxx
+NavierStokes3DGammaAlphaBSLPuvt.hh
+NavierStokes3DGammaAlphaSSTPuvt.cxx
+NavierStokes3DGammaAlphaSSTPuvt.hh
+)
+
+LIST ( APPEND GammaAlpha_cflibs NavierStokes KOmega SA)
+LIST ( APPEND GammaAlpha_requires_mods NavierStokes KOmega SA)
+CF_ADD_PLUGIN_LIBRARY ( GammaAlpha )
+CF_WARN_ORPHAN_FILES()
+
+#ADD_SUBDIRECTORY ( testcases )
+

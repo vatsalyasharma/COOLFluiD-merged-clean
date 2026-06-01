@@ -1,0 +1,604 @@
+// Copyright (C) 2016 KU Leuven, Belgium
+//
+// This software is distributed under the terms of the
+// GNU Lesser General Public License version 3 (LGPLv3).
+// See doc/lgpl.txt and doc/gpl.txt for the license text.
+
+#ifndef COOLFluiD_FluxReconstructionMethod_FluxReconstructionSolverData_hh
+#define COOLFluiD_FluxReconstructionMethod_FluxReconstructionSolverData_hh
+
+//////////////////////////////////////////////////////////////////////////////
+
+#include "Framework/GeometricEntityPool.hh"
+#include "Framework/LinearSystemSolver.hh"
+#include "Framework/ConvergenceMethod.hh"
+#include "Framework/MultiMethodHandle.hh"
+#include "Framework/SpaceMethodData.hh"
+#include "Framework/StdTrsGeoBuilder.hh"
+#include "Framework/FaceToCellGEBuilder.hh"
+#include "Framework/VarSetMatrixTransformer.hh"
+
+#include "Framework/DofDataHandleIterator.hh"
+#include "Framework/ProxyDofIterator.hh"
+
+#include "FluxReconstructionMethod/CellToFaceGEBuilder.hh"
+
+#include "MathTools/RealMatrix.hh"
+#include "Framework/BlockAccumulator.hh"
+#include <map>
+#include <utility>
+
+//////////////////////////////////////////////////////////////////////////////
+
+namespace COOLFluiD {
+  namespace Framework { class SpaceMethod; }
+  namespace FluxReconstructionMethod {
+
+    // Forward declarations
+    class BCStateComputer;
+    class FluxReconstructionStrategy;
+    class BasePointDistribution;
+    class BaseCorrectionFunction;
+    class FluxReconstructionElementData;
+    class ReconstructStatesFluxReconstruction;
+    class ConvBndCorrectionsRHSFluxReconstruction;
+    class RiemannFlux;
+
+//////////////////////////////////////////////////////////////////////////////
+
+/**
+ * This class represents data object accessed by different FluxReconstructionSolverCom's
+ * 
+ * @author Alexander Papen
+ * @author Ray Vandenhoeck
+ */
+class FluxReconstructionSolverData : public Framework::SpaceMethodData {
+
+public: // functions
+
+  /// Defines the Config Option's of this class
+  /// @param options a OptionList where to add the Option's
+  static void defineConfigOptions(Config::OptionList& options);
+
+  /// Constructor
+  FluxReconstructionSolverData(Common::SafePtr<Framework::Method> owner);
+
+  /// Destructor
+  ~FluxReconstructionSolverData();
+
+  /// Configure the data from the supplied arguments
+  virtual void configure ( Config::ConfigArgs& args );
+  
+  /**
+   * Get the numerical jacobian calculator
+   */
+  Common::SafePtr<Framework::NumericalJacobian> getNumericalJacobian() const
+  {
+    cf_assert(m_numJacob.get() != CFNULL);
+    return m_numJacob.get();
+  }
+  
+  /**
+   * Get the vector transformer from update to solution variables
+   * This function is implemented in the specific (space) MethodData
+   */
+  Common::SafePtr<Framework::VarSetTransformer>
+  getUpdateToSolutionVecTrans() const
+  {
+    cf_assert(m_updateToSolutionVecTrans.isNotNull());
+    return m_updateToSolutionVecTrans.getPtr();
+  }
+  
+  /**
+   * Get the matrix transformer from solution to update variables
+   * starting from update variables
+   */
+  Common::SafePtr<Framework::VarSetMatrixTransformer>
+  getSolToUpdateInUpdateMatTrans() const
+  {
+    cf_assert(m_solToUpdateInUpdateMatTrans.isNotNull());
+    return m_solToUpdateInUpdateMatTrans.getPtr();
+  }
+
+  /// Sets the LinearSystemSolver for this SpaceMethod to use
+  /// @pre LinearSystemSolver pointer is not constant to allow dynamic_casting
+  void setLinearSystemSolver(
+    Framework::MultiMethodHandle< Framework::LinearSystemSolver > lss )
+  {
+    m_lss = lss;
+    SpaceMethodData::setLinearSystemSolver(lss);
+  }
+
+  /// Get the linear system solver
+  Framework::MultiMethodHandle< Framework::LinearSystemSolver >
+    getLinearSystemSolver() const
+  {
+    cf_assert(m_lss.isNotNull());
+    return m_lss;
+  }
+
+  /// Get the LSS matrix (system or preconditioner depending on fillPreconditionerMatrix flag)
+  /// Uses FR's own m_lss handle
+  Common::SafePtr<Framework::LSSMatrix> getLSSMatrix(CFuint iSys)
+  {
+    return (!fillPreconditionerMatrix()) ? m_lss[iSys]->getMatrix() : m_lss[iSys]->getPreconditionerMatrix();
+  }
+
+  /// Enable/disable direct element-diagonal block accumulation (bypasses PETSc matrix)
+  void setFillElemDiagBlocks(bool flag, std::vector<RealMatrix>* blocks = CFNULL)
+  {
+    m_fillElemDiagBlocks = flag;
+    m_elemDiagBlocks = blocks;
+  }
+
+  /// Check if direct element-diagonal block accumulation is active
+  bool fillElemDiagBlocks() const { return m_fillElemDiagBlocks; }
+
+  /// Enable/disable per-DOF point-diagonal block accumulation.
+  /// When active, assembleJacobBlock/Face only stores the sol-pt diagonal entries
+  /// (nEqs x nEqs per DOF) instead of full element blocks.
+  void setFillPointDiagBlocks(bool flag, std::vector<std::vector<RealMatrix>>* blocks = CFNULL)
+  {
+    m_fillPointDiagBlocks = flag;
+    m_pointDiagBlocks = blocks;
+  }
+
+  /// Set P0 off-diagonal block storage (owned by preconditioner).
+  /// Map key: (leftCellTRSIdx, rightCellTRSIdx) -> Galerkin-projected nEqs x nEqs block
+  void setP0OffDiagBlocks(std::map<std::pair<CFuint,CFuint>, RealMatrix>* blocks)
+  {
+    m_p0OffDiagBlocks = blocks;
+  }
+
+  /// Assemble single-cell Jacobian block (volume, boundary, time contributions).
+  /// If fillElemDiagBlocks is true, accumulates into element-diagonal block storage.
+  /// Otherwise, writes to the PETSc matrix via addValues.
+  void assembleJacobBlock(Framework::BlockAccumulator& acc, CFuint cellIdx);
+
+  /// Assemble two-cell (internal face) Jacobian block.
+  /// Extracts L*L and R*R diagonal sub-blocks from the 2N*2N face accumulator.
+  void assembleJacobBlockFace(Framework::BlockAccumulator& acc,
+                               CFuint leftCellIdx, CFuint rightCellIdx,
+                               CFuint nSolPtsPerSide);
+
+  /// Compute element-diagonal Jacobian blocks for all cells.
+  /// Temporarily enables doComputeJacobian + fillElemDiagBlocks + linearResidualMode,
+  /// calls the space method's residual pipeline, then restores all flags.
+  /// Caller must backup/restore rhs and updateCoeff before/after this call.
+  /// Caller must zero 'blocks' before calling.
+  void computeDiagBlocks(std::vector<RealMatrix>& blocks,
+                         Framework::SpaceMethod* spaceMtd);
+
+  /// Compute per-DOF point-diagonal Jacobian blocks via the residual pipeline.
+  /// Like computeDiagBlocks but only accumulates the sol-pt diagonal (nEqs x nEqs per DOF).
+  void computePointDiagBlocks(std::vector<std::vector<RealMatrix>>& pointBlocks,
+                              Framework::SpaceMethod* spaceMtd);
+
+  /// Sets the ConvergenceMethod for this SpaceMethod to use
+  /// @pre the pointer to ConvergenceMethod is not constant to
+  ///      allow dynamic_casting
+  void setConvergenceMethod(Framework::MultiMethodHandle<Framework::ConvergenceMethod> convMtd)
+  {
+    m_convergenceMtd = convMtd;
+  }
+
+  /// Get the ConvergenceMethod
+  Framework::MultiMethodHandle<Framework::ConvergenceMethod> getConvergenceMethod() const
+  {
+    cf_assert(m_convergenceMtd.isNotNull());
+    return m_convergenceMtd;
+  }
+
+
+  /// @return the GeometricEntity builder
+  Common::SafePtr<
+    Framework::GeometricEntityPool< Framework::StdTrsGeoBuilder > >
+    getStdTrsGeoBuilder()
+  {
+    return &m_stdTrsGeoBuilder;
+  }
+
+
+  /// Gets the Class name
+  static std::string getClassName()
+  {
+    return "FluxReconstructionSolver";
+  }
+  
+  /// Gets the flux point distribution
+  Common::SafePtr< BasePointDistribution > getFluxPntDistribution() const
+  {
+    cf_assert(m_fluxPntDistribution.isNotNull());
+    return m_fluxPntDistribution.getPtr();
+  }
+  
+  /// Gets the solution point distribution
+  Common::SafePtr< BasePointDistribution > getSolPntDistribution() const
+  {
+    cf_assert(m_solPntDistribution.isNotNull());
+    return m_solPntDistribution.getPtr();
+  }
+  
+  /// Gets the correction function computation strategy
+  Common::SafePtr< BaseCorrectionFunction > getCorrectionFunction() const
+  {
+    cf_assert(m_correctionFunction.isNotNull());
+    return m_correctionFunction.getPtr();
+  }
+    
+  /// @return reference to m_frLocalData
+  std::vector< FluxReconstructionElementData* >& getFRLocalData()
+  {
+    return m_frLocalData;
+  }
+  
+  /// @return m_linearVarStr
+  std::string getLinearVarStr()
+  {
+    return m_linearVarStr;
+  }
+  
+  /// @return the states reconstructor
+  Common::SafePtr< ReconstructStatesFluxReconstruction > getStatesReconstructor()
+  {
+    return m_statesReconstructor.getPtr();
+  }
+  
+  /// @return the GeometricEntity face builder
+  Common::SafePtr<
+    Framework::GeometricEntityPool< Framework::FaceToCellGEBuilder > >
+    getFaceBuilder()
+  {
+    return &m_faceBuilder;
+  }
+  
+  /// @return the second GeometricEntity face builder
+  Common::SafePtr<
+    Framework::GeometricEntityPool< Framework::FaceToCellGEBuilder > >
+    getSecondFaceBuilder()
+  {
+    return &m_faceBuilder2nd;
+  }
+  
+  /// @return SafePtr to the Riemann flux strategy
+  Common::SafePtr< RiemannFlux > getRiemannFlux()
+  {
+    return m_riemannFlux.getPtr();
+  }
+  
+  /// @return m_riemannFluxStr
+  std::string getRiemannFluxStr()
+  {
+    return m_riemannFluxStr;
+  }
+  
+  /// @return the BCStateComputers
+  Common::SafePtr< std::vector< Common::SafePtr< BCStateComputer > > > getBCStateComputers()
+  {
+    return &m_bcsSP;
+  }
+  
+  /// @return m_bcNameStr
+  std::vector< std::string >& getBCNameStr()
+  {
+    return m_bcNameStr;
+  }
+
+  /// @return m_bcTRSNameStr
+  Common::SafePtr< std::vector< std::vector< std::string > > > getBCTRSNameStr()
+  {
+    return &m_bcTRSNameStr;
+  }
+  
+  /// set m_resFactor
+  void setResFactor(CFreal resFactor)
+  {
+    m_resFactor = resFactor;
+  }
+  
+  /// @return m_resFactor
+  CFreal getResFactor()
+  {
+    return m_resFactor;
+  }
+  
+  /// set m_maxNbrRFluxPnts
+  void setMaxNbrRFluxPnts(CFuint maxNbrRFluxPnts)
+  {
+    m_maxNbrRFluxPnts = maxNbrRFluxPnts;
+  }
+  
+  /// @return m_maxNbrRFluxPnts
+  CFuint getMaxNbrRFluxPnts()
+  {
+    return m_maxNbrRFluxPnts;
+  }
+  
+  /// @return reference to m_bndFacesStartIdxs
+  std::map< std::string , std::vector< std::vector< CFuint > > >& getBndFacesStartIdxs()
+  {
+    return m_bndFacesStartIdxs;
+  }
+  
+  /// @return reference to m_partitionFacesStartIdxs
+  std::vector< CFuint >& getPartitionFacesStartIdxs()
+  {
+    return m_partitionFacesStartIdxs;
+  }
+  
+  /// @return m_maxNbrStatesData
+  CFuint getMaxNbrStatesData()
+  {
+    return m_maxNbrStatesData;
+  }
+  
+  /// set m_maxNbrStatesData
+  void setMaxNbrStatesData(CFuint maxNbrStatesData)
+  {
+    m_maxNbrStatesData = maxNbrStatesData;
+  }
+  
+  /// @return reference to m_innerFacesStartIdxs
+  std::vector< CFuint >& getInnerFacesStartIdxs()
+  {
+    return m_innerFacesStartIdxs;
+  }
+  
+  /// @return m_hasDiffTerm
+  bool hasDiffTerm()
+  {
+    return m_hasDiffTerm;
+  }
+  
+  /// Returns a boolean telling whether artificial viscosity is added
+  bool hasArtificialViscosity()
+  {
+    return m_addAV;
+  }
+  
+  /// Returns a boolean telling whether artificial viscosity is added
+  CFreal getDiffDampCoefficient()
+  {
+    return m_diffDampCoeff;
+  }
+  
+  /// Returns a boolean telling whether to freeze the Jacobian
+  bool freezeJacob()
+  {
+    return m_freezeJacob;
+  }
+  
+  /// Returns a the iteration after which to freeze the Jacobian
+  CFuint getFreezeJacobIter()
+  {
+    return m_freezeJacobIter;
+  }
+  
+  /// Returns a the amount of iterations to freeze the Jacobian before recalculation
+  CFuint getFreezeJacobInterval()
+  {
+    return m_freezeJacobInterval;
+  }
+
+  /// Returns whether to freeze diffusive coefficients during Jacobian perturbation
+  bool freezeDiffCoeff() const
+  {
+    return m_freezeDiffCoeff;
+  }
+
+  /// Returns whether to use BR2VS (average-of-fluxes) diffusive flux formulation
+  bool getUseBR2VS() const
+  {
+    return m_diffFluxFormulation == "BR2VS";
+  }
+  
+  /// @return the GeometricEntity cell builder
+  Common::SafePtr<
+      Framework::GeometricEntityPool< FluxReconstructionMethod::CellToFaceGEBuilder > >
+      getCellBuilder()
+  {
+    return &m_cellBuilder;
+  }
+  
+  /// @return the second GeometricEntity cell builder
+  Common::SafePtr<
+      Framework::GeometricEntityPool< FluxReconstructionMethod::CellToFaceGEBuilder > >
+      getSecondCellBuilder()
+  {
+    return &m_cellBuilder2nd;
+  }
+  
+  /**
+   * Tell if a variable has to be applied for the residual
+   */
+  bool isResidualTransformationNeeded() const
+  {
+    return (_updateVarStr != _solutionVarStr);
+  }
+
+  /// @return m_createVolumesSocketBool
+  bool createVolumesSocket()
+  {
+    return m_createVolumesSocketBool;
+  }
+  
+  /// Sets up the FluxReconstructionData
+  void setup();
+  
+  /// Unsets the method data
+  void unsetup();
+
+private:  // helper functions
+  
+  /**
+   * Creates the local data for FR
+   */
+  void createFRLocalData();
+
+private:  // data
+  
+  /// Numerical jacobian calculator
+  std::auto_ptr<Framework::NumericalJacobian> m_numJacob;
+
+  /// Linear system solver
+  Framework::MultiMethodHandle< Framework::LinearSystemSolver > m_lss;
+
+  /// Convergence Method
+  Framework::MultiMethodHandle<Framework::ConvergenceMethod> m_convergenceMtd;
+
+  /// Builder for standard TRS GeometricEntity's
+  Framework::GeometricEntityPool< Framework::StdTrsGeoBuilder > m_stdTrsGeoBuilder;
+  
+  /// Builder for faces (containing the neighbouring cells)
+  Framework::GeometricEntityPool< Framework::FaceToCellGEBuilder >  m_faceBuilder;
+  
+  /// Second builder for faces (containing the neighbouring cells)
+  Framework::GeometricEntityPool< Framework::FaceToCellGEBuilder >  m_faceBuilder2nd;
+  
+  /// Builder for cells (containing the neighbouring faces)
+  Framework::GeometricEntityPool< FluxReconstructionMethod::CellToFaceGEBuilder >  m_cellBuilder;
+  
+  /// Second builder for cells (containing the neighbouring faces)
+  Framework::GeometricEntityPool< FluxReconstructionMethod::CellToFaceGEBuilder >  m_cellBuilder2nd;
+  
+  /// vector containing the  FluxReconstructionElementData for different element types
+  std::vector< FluxReconstructionElementData* > m_frLocalData;
+  
+  /// pointer to states reconstructor strategy
+  Common::SelfRegistPtr< ReconstructStatesFluxReconstruction > m_statesReconstructor;
+  
+  /// Flux point distribution
+  Common::SelfRegistPtr< BasePointDistribution > m_fluxPntDistribution;
+
+  /// String to configure flux point distribution
+  std::string m_fluxPntDistributionStr;
+  
+  /// Solution point distribution
+  Common::SelfRegistPtr< BasePointDistribution > m_solPntDistribution;
+
+  /// String to configure solution point distribution
+  std::string m_solPntDistributionStr;
+    
+  /// Correction function computation strategy
+  Common::SelfRegistPtr< BaseCorrectionFunction > m_correctionFunction;
+    
+  /// String to configure correction function computation strategy
+  std::string m_correctionFunctionStr;
+  
+  /// String for the linear variable name (for instance, the Roe average variables)
+  std::string m_linearVarStr;
+  
+  /// pointer to Riemann flux strategy
+  Common::SelfRegistPtr< RiemannFlux > m_riemannFlux;
+  
+  /// String for the Riemann flux
+  std::string m_riemannFluxStr;
+  
+  //// Damping coefficient of diffusive flux scheme
+  CFreal m_diffDampCoeff;
+  
+  /// The boundary condition state computer strategies
+  std::vector< Common::SelfRegistPtr< BCStateComputer > > m_bcs;
+
+  /// The boundary condition state computer strategies, as SafePtrs
+  std::vector< Common::SafePtr< BCStateComputer > > m_bcsSP;
+
+  /// The boundary condition strategy types
+  std::vector< std::string > m_bcTypeStr;
+
+  /// The boundary condition strategy names for configuration
+  std::vector< std::string > m_bcNameStr;
+
+  /// The boundary condition TRS names
+  std::vector< std::vector< std::string > > m_bcTRSNameStr;
+  
+  /// variable for maximum number of points in which the Riemann solver is evaluated
+  CFuint m_maxNbrRFluxPnts;
+  
+  /// variable for maximum number of statesData that has to be computed
+  CFuint m_maxNbrStatesData;
+  
+  /// factor to multiply the residual with, coming from the time discretization
+  CFreal m_resFactor;
+  
+  /// boolean storing wether there is a diffusive term
+  bool m_hasDiffTerm;
+  
+  /// map between the boundary TRS and the start index of faces with a certain orientation
+  std::map< std::string , std::vector< std::vector< CFuint > > > m_bndFacesStartIdxs;
+  
+  /// start index of inner faces with a certain orientation
+  std::vector< CFuint > m_innerFacesStartIdxs;
+  
+  /// start index of partition faces with a certain orientation
+  std::vector< CFuint > m_partitionFacesStartIdxs;
+  
+  /// Vector transformer from update to solution variables
+  Common::SelfRegistPtr<Framework::VarSetTransformer> m_updateToSolutionVecTrans;
+  
+  /// Matrix transformer from solution to update variables
+  /// starting from update variables
+  Common::SelfRegistPtr<Framework::VarSetMatrixTransformer> m_solToUpdateInUpdateMatTrans;
+
+  /// Optional explicit matrix-transformer provider for solution-to-update in update variables.
+  std::string m_solToUpdateInUpdateMatTransStr;
+
+  /// Flag telling whether to freeze the Jacobian
+  bool m_freezeJacob;
+
+  /// Flag telling whether to freeze diffusive coefficients during Jacobian perturbation
+  bool m_freezeDiffCoeff; //Vatsalya: freeze mu/lambda during FD Jacobian perturbation to avoid noisy transport-table derivatives
+  
+  /// Flag telling whether to add artificial viscosity
+  bool m_addAV;
+
+  /// boolean telling wheter the socket containing the volume for each state (!= cell) has to be created
+  bool m_createVolumesSocketBool;
+  
+  /// iteration after which to freeze the Jacobian
+  CFuint m_freezeJacobIter;
+  
+  /// amount of iterations to freeze the Jacobian before recalculation
+  CFuint m_freezeJacobInterval;
+
+  /// Diffusive flux formulation: "BR2" (default) or "BR2VS" (average-of-fluxes)
+  std::string m_diffFluxFormulation; //Vatsalya: BR2VS averages side fluxes instead of evaluating at averaged state; default remains BR2
+
+  /// flag: redirect Jacobian assembly to element-diagonal blocks
+  bool m_fillElemDiagBlocks;
+
+  /// pointer to element-diagonal block storage (owned by preconditioner)
+  std::vector<RealMatrix>* m_elemDiagBlocks;
+
+  /// pointer to P0 off-diagonal block storage (owned by preconditioner)
+  std::map<std::pair<CFuint,CFuint>, RealMatrix>* m_p0OffDiagBlocks;
+
+  /// flag: redirect Jacobian assembly to per-DOF point-diagonal blocks
+  bool m_fillPointDiagBlocks;
+
+  /// pointer to per-DOF point-diagonal block storage (owned by preconditioner).
+  /// Outer vector indexed by TRS-local cell ID, inner vector by cell-local sol pt index.
+  /// Each RealMatrix is nEqs x nEqs.
+  std::vector<std::vector<RealMatrix>>* m_pointDiagBlocks;
+
+};  // end of class FluxReconstructionSolverData
+
+//////////////////////////////////////////////////////////////////////////////
+
+/// Definition of a MethodCommand for FluxReconstructionMethod
+typedef Framework::MethodCommand< FluxReconstructionSolverData > FluxReconstructionSolverCom;
+
+/// Definition of a command provider for FluxReconstructionMethod
+typedef FluxReconstructionSolverCom::PROVIDER FluxReconstructionSolverComProvider;
+
+/// Definition of a MethodStrategy for FluxReconstructionMethod
+typedef Framework::MethodStrategy< FluxReconstructionSolverData > FluxReconstructionSolverStrategy;
+
+//////////////////////////////////////////////////////////////////////////////
+
+  } // namespace FluxReconstructionMethod
+} // namespace COOLFluiD
+
+//////////////////////////////////////////////////////////////////////////////
+
+#endif // COOLFluiD_Numerics_FluxReconstructionMethod_FluxReconstructionSolverData_hh

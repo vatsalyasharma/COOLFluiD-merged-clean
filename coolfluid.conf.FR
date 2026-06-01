@@ -1,0 +1,108 @@
+#==================================================================
+# COOLFluiD FR-Only Build Configuration
+#==================================================================
+# This config file builds only the Flux Reconstruction solver
+# and its dependencies. Copy to coolfluid.conf before building.
+#
+# Usage:
+#   cp coolfluid.conf.FR coolfluid.conf
+#   # Edit paths below to match your system
+#   ./prepare.pl --config
+#   cd OPTI && make -j$(nproc)
+#==================================================================
+
+#==================================================================
+# Directory setup - EDIT THESE for your system
+#==================================================================
+
+# COOLFluiD source directory (where prepare.pl lives)
+coolfluid_dir   = /mnt/c/codes/COOLFluiD/COOLFluiD-merged
+
+# Build directory (out-of-source build, created automatically)
+basebuild_dir   = /mnt/c/codes/COOLFluiD/COOLFluiD-merged
+
+# Install directory (local install within codebase)
+install_dir     = /mnt/c/codes/COOLFluiD/COOLFluiD-merged/local_install
+
+#==================================================================
+# Compilers - System MPI wrappers
+#==================================================================
+# Using system MPI. Adjust paths if your MPI is installed elsewhere.
+# Common locations:
+#   Ubuntu/Debian: /usr/bin/mpicc, /usr/bin/mpicxx, /usr/bin/mpif90
+#   OpenMPI:       /usr/local/bin/mpicc
+#   Module system: use `which mpicc` to find path
+
+cc              = mpicc
+cxx             = mpicxx
+fc              = mpif90
+
+nofortran       = 0
+withcurl        = 0
+
+#==================================================================
+# External library paths - EDIT THESE for your system
+#==================================================================
+# MPI: usually auto-detected from compiler wrappers
+# Uncomment and set if needed:
+# mpi_dir       = /usr
+
+# Boost: Required. Installed locally with tools/scripts/install-coolfluid-deps.pl
+boost_dir       = /mnt/c/codes/COOLFluiD/COOLFluiD-merged/dependencies
+boost_includedir = /mnt/c/codes/COOLFluiD/COOLFluiD-merged/dependencies/include
+boost_librarydir = /mnt/c/codes/COOLFluiD/COOLFluiD-merged/dependencies/lib
+
+# CGNS: local parallel CGNS built against local parallel HDF5
+cgns_dir        = /mnt/c/codes/COOLFluiD/COOLFluiD-merged/dependencies
+
+# PETSc: Required for implicit time integration
+# Install from: https://petsc.org/release/install/
+# Set to your PETSc installation directory:
+# petsc_dir     = /usr/lib/petsc
+# petsc_dir     = /home/USER/local/petsc
+
+# ParMETIS: Required for mesh partitioning
+# Uncomment and set if not in system path:
+# parmetis_dir  = /usr
+
+#==================================================================
+# Build options
+#==================================================================
+
+# Build all discovered plugins (since non-FR dirs are removed, this is safe)
+allactive       = 1
+
+# Include test case files
+with_testcases  = 0
+
+# Build system generator
+cmake_generator = make
+
+# Compiler flags
+optim_cxxflags  = -O3 -g -fPIC -std=c++11
+optim_cflags    = -O3 -g -fPIC
+optim_fflags    = -O3 -g -fPIC
+
+# Long integers (set to 1 if mesh has > 2 billion elements)
+with_longint    = 0
+
+#==================================================================
+# Features - OFF for FR-only build
+#==================================================================
+withcuda        = 0
+with_plato      = 0
+with_paralution = 0
+
+# Uncomment to enable Mutation++ (for non-equilibrium chemistry)
+# with_mutationpp = 1
+# mutationpp_dir  = /path/to/mutationpp
+# mutationpp_includedir = /path/to/mutationpp/include
+# mutationpp_librarydir = /path/to/mutationpp/lib
+
+#==================================================================
+# Debug build (uncomment for debug mode)
+#==================================================================
+# build           = DEBUG
+# debug_cxxflags  = -O0 -g3 -fPIC -std=c++11 -DDEBUG
+# debug_cflags    = -O0 -g3 -fPIC -DDEBUG
+# debug_fflags    = -O0 -g3 -fPIC

@@ -1,0 +1,371 @@
+#include "Framework/PhysicalChemicalLibrary.hh"
+#include "Framework/PhysicalConsts.hh"
+#include "Common/CFLog.hh"
+#include "Framework/GeometricEntity.hh"
+#include "Common/NoSuchValueException.hh"
+#include "FiniteVolume/ComputeDiffusiveFlux.hh"
+//#include "FiniteVolume/DerivativeComputer.hh"
+
+//////////////////////////////////////////////////////////////////////////////
+
+namespace COOLFluiD {
+
+  namespace Numerics {
+
+    namespace FiniteVolume {
+
+//////////////////////////////////////////////////////////////////////////////
+
+template <class UPDATEVAR>
+DriftWaves3DTwoFluid<UPDATEVAR>::DriftWaves3DTwoFluid(const std::string& name) :
+  ComputeSourceTermFVMCC(name),
+  _varSet(CFNULL),
+  _nstates(CFNULL),
+  socket_Qtot("Qtot"),
+  socket_GradPyi("GradPyi"),
+  socket_GradPye("GradPye"),
+  _physicalData(),
+  _temp(),
+  _states(),
+  _values(),
+  _NonInducedEMField(),
+  _dummyGradients(),
+  _Btotal(),
+  _Etotal()
+{
+  addConfigOptionsTo(this);
+
+  _electricCharge = Framework::PhysicalConsts::ElectronCharge();
+  setParameter("ElectricCharge",&_electricCharge);
+
+}
+      
+//////////////////////////////////////////////////////////////////////////////
+
+template <class UPDATEVAR>
+DriftWaves3DTwoFluid<UPDATEVAR>::~DriftWaves3DTwoFluid()
+{
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+template <class UPDATEVAR>
+std::vector<Common::SafePtr<Framework::BaseDataSocketSource> >
+DriftWaves3DTwoFluid<UPDATEVAR>::providesSockets()
+{
+  std::vector<Common::SafePtr<Framework::BaseDataSocketSource> > result = 
+    ComputeSourceTermFVMCC::providesSockets();
+  // AAL: Example2
+  result.push_back(&socket_Qtot);
+  result.push_back(&socket_GradPyi);
+  result.push_back(&socket_GradPye);
+  return result;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+template <class UPDATEVAR>
+void DriftWaves3DTwoFluid<UPDATEVAR>::defineConfigOptions(Config::OptionList& options)
+{
+  options.template addConfigOption< CFreal >
+     ("ElectricCharge", "electric Charge of species");
+
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+template <class UPDATEVAR>
+void DriftWaves3DTwoFluid<UPDATEVAR>::setup()
+{
+  using namespace std;
+  using namespace COOLFluiD::Common;
+  using namespace COOLFluiD::Framework;
+  
+  ComputeSourceTermFVMCC::setup();
+  
+  _varSet = this->getMethodData().getUpdateVar().template d_castTo<UPDATEVAR>();
+  _varSet->getModel()->resizePhysicalData(_physicalData);
+  cf_assert(_varSet.isNotNull());
+  
+  DataHandle<CFreal> normals = this->socket_normals.getDataHandle();
+  _nstates = _sockets.template getSocketSink<RealVector>("nstates")->getDataHandle();
+  
+  //SafePtr<typename UPDATEVAR::PTERM> term = _varSet->getModel();
+  //const CFuint nbSpecies = term->getNbScalarVars(0);
+  
+  _temp.resize(PhysicalModelStack::getActive()->getNbEq());
+  //const CFuint maxNbNodesIn2DCV = 4;
+  //_states.reserve(maxNbNodesIn2DCV);
+  //SafePtr<DerivativeComputer> derComput = this->getMethodData().getDerivativeComputer();
+  //const CFuint nbNodesInControlVolume = derComput->getMaxNbVerticesInControlVolume();
+  //values.resize(PhysicalModelStack::getActive()->getNbEq(), nbNodesInControlVolume);
+
+  //************************************************************
+  // AAL: Here you need to resize ALL the member variables that are defined in the .hh to be a Vector
+  //************************************************************
+  // Example3: the socket GammaIon resized to nbCells and initialized to 0
+  Common::SafePtr<Common::ConnectivityTable<CFuint> > cells =
+    MeshDataStack::getActive()->getConnectivity("cellStates_InnerCells");
+  const CFuint nbCells = cells->nbRows();
+  socket_Qtot.getDataHandle().resize(nbCells);
+  socket_GradPyi.getDataHandle().resize(nbCells);
+  socket_GradPye.getDataHandle().resize(nbCells);
+
+  DataHandle<CFreal> ChargePrint = socket_Qtot.getDataHandle();
+  DataHandle<CFreal> GradPyiPrint = socket_GradPyi.getDataHandle();
+  DataHandle<CFreal> GradPyePrint = socket_GradPye.getDataHandle();
+
+  ChargePrint.resize(nbCells);
+  ChargePrint = 0;
+  GradPyiPrint.resize(nbCells);
+  GradPyiPrint = 0;
+  GradPyePrint.resize(nbCells);
+  GradPyePrint = 0;
+  
+  //Example4: Here I resize the vectors defined in the .hh
+  _NonInducedEMField.resize(6);
+  _Btotal.resize(3);
+  _Etotal.resize(3);
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+template <class UPDATEVAR>
+void DriftWaves3DTwoFluid<UPDATEVAR>::computeSource
+(Framework::GeometricEntity *const element, RealVector& source, RealMatrix& jacobian)
+{
+  using namespace std;
+  using namespace COOLFluiD::Framework;
+  using namespace COOLFluiD::Common;
+  using namespace COOLFluiD::MathTools;
+
+  //AAL: Setting up some needed variables
+  SafePtr<typename UPDATEVAR::PTERM> term = _varSet->getModel();
+  const vector<State*>* const states = element->getStates();
+  const CFuint elemID = element->getID();
+
+  //AAL: Declaring in this function the sockets 
+  DataHandle<CFreal> ChargePrint = socket_Qtot.getDataHandle();
+  DataHandle<CFreal> GradPyiPrint = socket_GradPyi.getDataHandle();
+  DataHandle<CFreal> GradPyePrint = socket_GradPye.getDataHandle();
+  //DataHandle<CFreal> GammaRec = socket_GammaRec.getDataHandle();
+  
+  cf_assert(states->size() == 1);
+ 
+  //
+  State *const currState = (*states)[0];
+  _varSet->computePhysicalData(*(*states)[0], _physicalData);
+
+  _NonInducedEMField = _varSet->getModel()->getNonInducedEMField
+    (currState->getCoordinates()[XX], currState->getCoordinates()[YY], currState->getCoordinates()[ZZ]); //The third component is null
+  
+  //std::cout << "Bz = " << _NonInducedEMField[ZZ] <<"\n"; 
+  //   RealVector& refData = _varSet->getModel()->getReferencePhysicalData();
+  DataHandle<CFreal> volumes = socket_volumes.getDataHandle();
+  
+  const EquationSubSysDescriptor& eqSS = PhysicalModelStack::getActive()->getEquationSubSysDescriptor();
+  const CFuint totalNbEqs = PhysicalModelStack::getActive()->getNbEq();	// Maxwell's Eqs.+ Multifluid NavierStokes Eqs.
+  const CFuint nbEqs = eqSS.getNbEqsSS();  				
+  const CFuint iEqSS = eqSS.getEqSS();
+  
+  //AAL: Here call all the functions needed to compute the source of Maxwell equations
+  _Etotal = 0;
+  _Btotal = 0;
+  computeEMField();
+  //std::cout <<"After computing Bz = " << _Btotal[ZZ] << std::endl;
+//Physical constants:
+  const CFreal kB = Framework::PhysicalConsts::Boltzmann(); 
+  const CFuint firstDensity = _varSet->getModel()->getFirstScalarVar(0);
+  const CFreal qe = _electricCharge*(-1);                        // charge of electrons in Coulombs
+  const CFreal qi = qe*(-1);                                    // charge of ions in Coulombs
+  const CFreal mi = _varSet->getModel()->getMolecularMass2();                            // Proton's mass [kg] source:Standart Handbook for Electrical Engineerings
+  const CFreal me = _varSet->getModel()->getMolecularMass1();                // Electron's mass [kg] source:Standart Handbook for Electrical Engineerings
+  const CFreal rho = _physicalData[UPDATEVAR::PTERM::RHO];
+  const CFreal rhoe = rho*_physicalData[firstDensity]; 	   //electrons density
+  const CFreal rhoi = rho*_physicalData[firstDensity + 1]; //ions density
+  //std::cout << "rho  = " << rho  << "\n";
+  //std::cout << "rhoe = " << rhoe << "\n";
+  //std::cout << "rhoi = " << rhoi << std::endl;
+  const CFreal Qtot = qe*rhoe/me + qi*rhoi/mi;
+  //std::cout << "Qtot = " << Qtot << std::endl;
+  const CFuint firstVelocity = _varSet->getModel()->getFirstScalarVar(1);
+  const CFreal ue = _physicalData[firstVelocity];
+  const CFreal ve = _physicalData[firstVelocity + 1];
+  const CFreal we = _physicalData[firstVelocity + 2];
+  const CFreal ui = _physicalData[firstVelocity + 3];
+  const CFreal vi = _physicalData[firstVelocity + 4];
+  const CFreal wi = _physicalData[firstVelocity + 5];
+  //const CFreal un = _physicalData[firstVelocity + 6];
+  //const CFreal vn = _physicalData[firstVelocity + 7];
+  //const CFreal wn = _physicalData[firstVelocity + 8];
+
+  // Computing the electric current
+  const CFreal Jx = qe*(rhoe/me)*ue + qi*(rhoi/mi)*ui;
+  const CFreal Jy = qe*(rhoe/me)*ve + qi*(rhoi/mi)*vi;
+  const CFreal Jz = qe*(rhoe/me)*we + qi*(rhoi/mi)*wi;
+//  std::cout <<"Jx= " <<Jx <<"\n";
+//  std::cout <<"ue= " <<ue <<"\n";
+//  std::cout <<"ui= " <<ui <<"\n";
+//  abort();
+
+//AAL: Here goes the source of Maxwell equations
+  if (nbEqs == totalNbEqs || iEqSS == 0) {
+    /// MAXWELL
+    const CFreal c_e = term->getLightSpeed();
+    const CFreal mu0 = term->getPermeability();
+    const CFreal ovEpsilon = c_e*c_e*mu0;
+//    std::cout << "1/Epsilon0= " <<ovEpsilon <<"\n";  
+
+    source[0] = 0.;             //x-Faraday's Law
+    source[1] = 0.;          	//y-Faraday's Law
+    source[2] = 0.;          	//z-Faraday's Law
+    source[3] = -Jx*ovEpsilon;	//x-Ampere's Law
+    source[4] = -Jy*ovEpsilon;	//y-Ampere's Law
+    source[5] = -Jz*ovEpsilon;  //z-Ampere's Law
+    source[6] = 0.;		//divB
+    source[7] = Qtot*ovEpsilon; //divE
+  }
+  
+  //AAL: Here the source for three-fluid continuity, momentum and energy equations
+  if (nbEqs == totalNbEqs || iEqSS == 1) {    
+    //AAL: The following should be changed for the 3 Fluid case
+    /// FLUID EQUATIONS
+    //AAL: CONTINUITY
+    source[8] = 0.;					// Electrons continuity equation
+    source[9] = 0.;					// Ions continuity equation
+      
+    //AAL: MOMENTUM
+    const CFuint firstTemperature = _varSet->getModel()->getFirstScalarVar(2);
+    CFreal Te = _physicalData[firstTemperature]; //electron temperature
+    CFreal Ti = _physicalData[firstTemperature + 4]; //ion temperature
+    
+
+    //Compute gradients NO
+    // Computation of the gradients for printing pressure gradient in the result
+       // ID for the physical data and the gradients
+       const CFuint firstSpecies =_varSet->getModel()->getFirstScalarVar(0);
+       const CFuint rhoeID = 8;
+       const CFuint rhoiID = 9;
+       const CFuint TeID   = 16;
+       const CFuint TiID   = 17;
+       const CFuint gradrhoeID = elemID*totalNbEqs + rhoeID;
+       const CFuint gradrhoiID = elemID*totalNbEqs + rhoiID;
+       const CFuint gradTeID = elemID*totalNbEqs + TeID;
+       const CFuint gradTiID = elemID*totalNbEqs + TiID;
+       const CFreal gradRhoe = 0.; //this->m_uy[gradrhoeID];
+       const CFreal gradRhoi = 0.; //this->m_uy[gradrhoiID];
+       const CFreal gradTe = 0.;   //this->m_uy[gradTeID];
+       const CFreal gradTi = 0.;   //this->m_uy[gradTiID];
+
+       const CFreal Rgasi = kB/mi;
+       const CFreal Rgase = kB/me;
+       const CFreal GradPyi = Rgasi*(gradRhoi*Ti + rhoi*gradTi);
+       const CFreal GradPye = Rgase*(gradRhoe*Te + rhoe*gradTe );
+
+    //electron, ion properties
+    const CFreal ne = rhoe/me;		   	// number density electrons [m^-3]
+    const CFreal ni = rhoi/mi;		   	// number density ions [m^-3]
+    const CFreal ne_cgs = ne*1e-6; // number density electrons for cgs unit use [cm^-3]
+    const CFreal ni_cgs = ni*1e-6; // number density ions for cgs unit use [cm^-3]
+    const CFreal Te_cgs = Te/11604.50520;		// electrons temperature in eV. 
+    const CFreal Ti_cgs = Ti/11604.50520;		// ions temperature in eV. 
+    const CFreal pi = MathTools::MathConsts::CFrealPi(); //Pi number
+    const CFreal Epsilon0 = Framework::PhysicalConsts::VacuumPermittivity();
+
+    //to calculate collision Frequency
+
+//    const CFreal Debye = std::sqrt(kB*Te_cgs/(4*pi*ne_cgs*qe*qe)); //Debye length  - assumes Te=Ti and ne=ni
+//    const CFreal C_log = std::log(12*pi*ne_cgs*std::pow(Debye,3)); //Coulomb logarithm - assumes Te=Ti and ne=ni
+//    const CFreal nu_i = 4.8e-8*ni*std::pow(Ti,-1.5)*C_log; //ion collision frequency - assumes Te=Ti and ne=ni
+//    const CFreal nu_e = 2.91e-6*ne*std::pow(Te,-1.5)*C_log; //electron collision frequency - assumes Te=Ti and ne=ni   
+
+    const CFreal r_di = std::sqrt(Epsilon0*kB*Ti/(ni*qe*qe)); //Debye length of ions [m]
+    const CFreal r_de = std::sqrt(Epsilon0*kB*Te/(ne*qe*qe)); //Debye length of electrons [m]
+    const CFreal r_deb = r_de*r_di/(std::sqrt(r_de*r_de + r_di*r_di)); //Debye length for plasma with several species
+//    std::cout <<"Debye length= " <<r_deb <<"\n";
+    const CFreal b0 = std::abs(qe*qi)/(4*pi*Epsilon0)/(3*kB*(Te+Ti));
+    const CFreal L_ie = std::log(r_deb/b0);
+//    std::cout << "Coulomb log= " << L_ie << "\n";
+    const CFreal nu_ie = 4*std::sqrt(2*pi/mi)*std::pow(std::abs(qe*qi)/(4*pi*Epsilon0),2)*ne*L_ie/(3*(std::pow(kB*Ti+kB*Te*mi/me,1.5))); //ion collision frequency for collisions with electrons (target)
+    const CFreal nu_ei = 4*std::sqrt(2*pi/me)*std::pow(std::abs(qe*qi)/(4*pi*Epsilon0),2)*ni*L_ie/(3*(std::pow(kB*Te+kB*Ti*me/mi,1.5))); //electron collision frequency for collisions with ions (target)
+//    std::cout <<"coll freq_e = "<< nu_ei << "\n";
+//    std::cout <<"coll freq_i = "<< nu_ie << "\n";
+    const CFreal const_e = 0.;//me*ne*nu_ei; //for collisional term of electrons
+    const CFreal const_i = 0.;//mi*ni*nu_ie; //for collisional term of ions
+//    std::cout <<"const_e = "<< const_e << "\n";
+//    std::cout <<"const_i = "<< const_i << "\n";
+
+    //momentum equations - NO removed const
+    CFreal emMomentumXe = qe*ne*(_Etotal[XX] + ve*_Btotal[ZZ] - we*_Btotal[YY]);// - const_e*ue;	//Electromagnetic momentum for electrons in X
+    CFreal emMomentumXi = qi*ni*(_Etotal[XX] + vi*_Btotal[ZZ] - wi*_Btotal[YY]);// - const_i*ui;	//Electromagnetic momentum for ions in X
+    CFreal emMomentumYe = qe*ne*(_Etotal[YY] + we*_Btotal[XX] - ue*_Btotal[ZZ]);// - const_e*ve;	//Electromagnetic momentum for electrons in Y
+    CFreal emMomentumYi = qi*ni*(_Etotal[YY] + wi*_Btotal[XX] - ui*_Btotal[ZZ]);// - const_i*vi;	//Electromagnetic momentum for ions in Y
+    CFreal emMomentumZe = qe*ne*(_Etotal[ZZ] + ue*_Btotal[YY] - ve*_Btotal[XX]);// - const_e*we;	//Electromagnetic momentum for electrons in Z
+    CFreal emMomentumZi = qi*ni*(_Etotal[ZZ] + ui*_Btotal[YY] - vi*_Btotal[XX]);// - const_i*wi;	//Electromagnetic momentum for ions in Z
+//    std::cout <<"qe = "<< qe << "\n";
+//    std::cout <<"qi = "<< qi << "\n";
+//    std::cout <<"ne = "<< ne << "\n";
+//    std::cout <<"ni = "<< ni << "\n";
+//     abort();
+
+    source[10] = emMomentumXe;   //Electrons X momentum
+    source[11] = emMomentumYe;   //Electrons Y momentum
+    source[12] = emMomentumZe;   //Electrons Z momentum
+
+    source[13] = emMomentumXi;   //Ions X momentum
+    source[14] = emMomentumYi;   //Ions Y momentum
+    source[15] = emMomentumZi;   //Ions Z momentum
+
+      
+    //AAL: ENERGY
+    const CFreal emEnergye = qe*(rhoe/me)*(ue*_Etotal[XX] + ve*_Etotal[YY] + we*_Etotal[ZZ]); //electrons
+    const CFreal emEnergyi = qi*(rhoi/mi)*(ui*_Etotal[XX] + vi*_Etotal[YY] + wi*_Etotal[ZZ]); //ions
+
+    source[16] = emEnergye; // + emMomentumXe*ue + emMomentumYe*ve + emMomentumZe*we; //Electrons Energy Source terms
+    source[17] = emEnergyi; // + emMomentumXi*ui + emMomentumYi*vi + emMomentumZi*wi; //Ions Energy
+
+    // AAL: Write the sockets
+    //if (!this->getMethodData().isPerturb()) { // Condition to avoid writing when the source is perturbed
+      //if(currState->isParUpdatable()) { // Condition to write only once the partition cells
+        ChargePrint[elemID] = Qtot;
+        GradPyiPrint[elemID] = GradPyi; //gradTi;
+        GradPyePrint[elemID] = GradPye; //gradTe;
+//GammaRec[elemID] = _GammaRec_i;
+      //}
+    //}
+  }
+  // AAL: Don't forget to multiply by the volume!!!!!
+  source *= volumes[elemID];
+  for (CFuint i = 0; i < source.size(); i++) {
+    CFLog(VERBOSE, "DriftWaves3DTwoFluid:: source [" << i <<"] = " << source[i] << "\n");
+  }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+template <class UPDATEVAR>
+void DriftWaves3DTwoFluid<UPDATEVAR>::computeEMField()
+{
+  //************************************************************
+  // AAL: This is the function where we compute the total current em field
+  //************************************************************
+
+  //// Total Electromagnetic Field
+  _Btotal[XX] = _physicalData[UPDATEVAR::PTERM::BX] + _NonInducedEMField[0];
+  _Btotal[YY] = _physicalData[UPDATEVAR::PTERM::BY] + _NonInducedEMField[1];
+  _Btotal[ZZ] = _physicalData[UPDATEVAR::PTERM::BZ] + _NonInducedEMField[2];
+  _Etotal[XX] = _physicalData[UPDATEVAR::PTERM::EX] + _NonInducedEMField[3];
+  _Etotal[YY] = _physicalData[UPDATEVAR::PTERM::EY] + _NonInducedEMField[4];
+  _Etotal[ZZ] = _physicalData[UPDATEVAR::PTERM::EZ] + _NonInducedEMField[5];
+
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+    } // namespace FiniteVolume
+
+  } // namespace Numerics
+
+} // namespace COOLFluiD
+
+//////////////////////////////////////////////////////////////////////////////
