@@ -1,124 +1,41 @@
 COOLFluiD Merged Code Documentation
-===================================
-
-Purpose
--------
-
-This folder is a clean source-oriented copy of the merged COOLFluiD codebase.
-It is intended for sharing with developers who need to understand what was
-merged, why it was merged this way, and where to inspect the deliberate changes.
+------------------------------------------------------
 
 
-Merge Philosophy
+This folder is a clean source-oriented copy of the merged COOLFluiD codebase. It is intended for sharing with developers who need to understand what was merged, why it was merged this way, and where to inspect the changes made.
+
+
+Merge Logic
 ----------------
 
-The merge philosophy was conservative: keep the newer merged COOLFluiD base as
-the main trunk, then bring the useful FR/RANS/transition capability forward
-without rewriting unrelated infrastructure.
-
-In practical terms:
+The merge logic was simple: keep the newer merged COOLFluiD base as the main trunk, then bring the useful FR/RANS/transition capability forward without rewriting unrelated infrastructure.
 
 1. Keep the merged framework and shared solver infrastructure as the baseline.
 
-2. Preserve the mature FR implementation where it already works, especially for
-   Navier-Stokes, turbulence, wall boundary conditions, high-order output,
-   implicit Newton/PETSc execution, and transition source terms.
+2. Preserve the original FR implementation (available on main andrea lani branch = baseline version) where it already works, especially for Navier-Stokes, turbulence, wall boundary conditions, high-order output, implicit Newton/PETSc execution, and transition source terms.
 
-3. Avoid broad rewrites. Changes were made only where the merged code needed
-   compatibility, stability, or missing plumbing for the RANS-LTT workflow.
+3. Avoid broad rewrites. 
 
-4. Prefer explicit, inspectable case-file changes over hidden behavior. Old
-   settings were generally kept commented near the active replacement so a
-   developer can see what changed and why.
+4. Prefer explicit, inspectable case-file changes over hidden behavior. Old settings were generally kept commented near the active replacement so a developer can see what changed and why.
 
-5. Keep the delivery tree source-focused. Build folders, dependency installs,
-   generated libraries, and temporary work products are not part of this clean
-   copy.
+5. Build folders, dependencies, libraries, and temporary work files are not part of this clean copy.
 
 
 What "VS" Means In This Work
 ----------------------------
 
-The suffix "VS" is used as a deliberate marker for variant/stabilized files and
-classes that distinguish this working line from the older baseline behavior.
+The suffix "VS" is used as a marker for variant files and classes that distinguish this codebase from the older baseline version.
 
 In this work, the VS path is mainly used to identify:
 
-1. Physicality/positivity variants based on the more accurate Zhang-Shu style
-   post-update limiting lineage.
+1. Physicality/positivity variants based on the more accurate Zhang-Shu post-update limiting lineage.
 
-2. Variable-set-aware variants that are meant to work cleanly with the
-   primitive/update variables used by the FR RANS and transition cases.
+2. Variable-set-aware variants that are meant to work cleanly with the primitive/update variables used by the FR RANS and transition cases.
 
-3. Test cases that should be compared against the original/non-VS case without
-   hiding which stabilization path is being exercised.
+3. Test cases that should be compared against the original/non-VS case without hiding which path is being exercised.
 
-The goal was not to rename the whole solver. The goal was to make the changed
-path visible: when a developer sees a VS case or class, they should treat it as
-part of the explicitly selected robust RANS-LTT workflow.
+The goal was not to rename the whole solver. The goal was to make the changed path visible. When a developer sees a VS case or class, they should treat it as part of the explicitly selected workflow.
 
-
-Categories Of Files Touched Or Merged
--------------------------------------
-
-The touched/merged work falls into these categories:
-
-1. FR core numerics
-
-   Shared Flux Reconstruction classes and commands used by implicit FR
-   Navier-Stokes, turbulence, and transition runs were kept compatible with the
-   merged codebase. This includes Jacobian-capable convective/diffusive
-   operators, high-order element data, limiter/physicality support, and FR
-   solver data plumbing.
-
-2. FR Navier-Stokes and turbulence support
-
-   The Navier-Stokes FR turbulence path, including SST/k-log-omega style
-   variable sets, physicality handling, boundary-gradient computation, and
-   implicit RHS/Jacobian commands, was preserved and aligned with the merged
-   solver infrastructure.
-
-3. Gamma-alpha transition model support
-
-   The gamma-alpha transition model remains connected to the FR turbulence
-   stack. The merged code keeps the GammaAlpha physical model, source terms,
-   boundary conditions, Jacobian-enabled commands, and test-case setup needed
-   for the RANS laminar-turbulent-transition workflow.
-
-4. Newton/PETSc implicit execution
-
-   The implicit Newton iterator and PETSc linear-system path were kept as the
-   active execution model for the target RANS-LTT cases. The cases are meant to
-   run as implicit, semi-analytical-Jacobian FR cases: numerical/semi-analytical
-   flux Jacobians plus analytical/block-decoupled transition source
-   contributions where selected.
-
-5. Wall-distance and skin-friction postprocessing
-
-   The MPI wall-distance path and FR skin-friction/heat-transfer postprocessing
-   were touched because the RANS-LTT validation depends on correct wall distance,
-   wall shear stress, and heat-transfer output in multi-rank runs.
-
-6. High-order output and restart workflow
-
-   The workflow keeps high-order FR output where appropriate and separates mesh
-   upgrade from solver restart. This is important because the higher-order
-   P1/P3/P7 cases should read a prepared upgraded restart mesh instead of
-   silently re-upgrading or overwriting restart data inside the solver run.
-
-7. GammaAlpha flat-plate test cases
-
-   The active RANS-LTT test-case work is concentrated in the GammaAlpha flat
-   plate cases. The P0 case is the reference implicit physicality-VS run. The
-   P1/P3/P7 cases are organized as two-step workflows: a mesh-upgrade case that
-   projects a converged P0 restart, and a solver-only case that reads the
-   upgraded high-order restart mesh.
-
-8. Documentation and delivery notes
-
-   The working documentation outside this clean folder records the reasoning,
-   progress, file tracking, and validation history. This clean folder keeps only
-   the delivery-oriented source tree plus this short merge note.
 
 
 Vatsalya Comments
@@ -132,13 +49,11 @@ The comments use normal file-appropriate syntax:
 
 2. CFcase and text-style configuration files use "#Vatsalya" where applicable.
 
-These comments were added so developers can quickly locate the important
-changes without reconstructing the whole debugging history. They usually appear
-above a commented old block or above the active replacement block and explain:
+These comments were added so developers can quickly locate the important changes without reconstructing the whole debugging history. They usually appear above a commented old block or above the active replacement block and explain:
 
-1. what old setting/code was kept for reference,
+1. what old setting/code was kept for reference.
 
-2. why it was not safe or sufficient for the current RANS-LTT workflow, and
+2. why it was not safe or sufficient for the workflow.
 
 3. why the active replacement was used.
 
@@ -150,20 +65,15 @@ Recommended review method:
 
    Vatsalya
 
-3. Review each hit in context before delivering, rebasing, or removing the
-   explanatory comments.
+3. Review each comment in context before delivering, rebasing, or removing the explanatory comments.
 
 
 GitHub Clean-Copy Notes
 -----------------------
 
-This clean copy does not include the main build output or dependency install
-trees. The build/library folders were intentionally excluded.
+This clean copy does not include the main build output or dependency install trees. The build/library folders were intentionally excluded.
 
-The clean copy also removes oversized non-source testcase data to stay aligned
-with GitHub's 100 MB per-file limit. The removed data are from large MHD and
-RadiativeTransfer testcase-data categories, not from the RANS-LTT GammaAlpha
-source or active flat-plate testcase workflow.
+*****IMP: The clean copy also removes oversized non-source testcase data to stay aligned with GitHub's 100 MB per-file limit. The removed data are from large MHD and RadiativeTransfer testcase-data categories, not from the active TCNEQ/RANS-LTT workflow.
 
 Files removed for the GitHub size limit:
 
@@ -173,24 +83,6 @@ Files removed for the GitHub size limit:
 4. plugins/MHD/testcases/COCONUT/Eclipse/Mesh/corona_720.CFmesh
 5. plugins/RadiativeTransfer/testcases/SolarCorona/corona_fullMHD.CFmesh
 
-The clean repository is therefore meant to preserve the code and active
-RANS-LTT development path, while avoiding large generated or auxiliary data that
-would block a normal GitHub upload.
 
-
-Developer Handoff Summary
--------------------------
-
-For RANS-LTT review, start with:
-
-1. The GammaAlpha flat-plate P0/P1/P3/P7 testcase categories.
-
-2. The VS physicality and variable-set-aware paths.
-
-3. The MPI wall-distance and FR skin-friction/heat-transfer categories.
-
-4. The source locations found by searching "Vatsalya".
-
-The clean copy is not a proof that every testcase has been rerun after every
-merge. It is a cleaned, source-focused delivery tree that preserves the merged
-implementation and the inspectable RANS-LTT changes.
+-----------------------------
+I hope everything is clearly noted. If not, please discuss with me.
