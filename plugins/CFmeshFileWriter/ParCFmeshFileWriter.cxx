@@ -1132,7 +1132,15 @@ void ParCFmeshFileWriter::writeGeoList(CFuint iTRS, ofstream *const fout)
 	  sendElements[isend++] = nbNodesInTRGeo;
 
 	  // number of states in the current TR geo entity
-	  const CFuint nbStatesInTRGeo = (isFVMCC) ? 1 : (*trs)[iType]->getNbStatesInGeo(localElemID);
+	  // Vatsalya: this count MUST be consistent with maxNbStatesInType used to bound the
+	  // state-writing loop below, which is built from nbNodesStatesInTRGeoTmp(iTR,1) =
+	  // (isFVMCC && maxNbStatesInTRGeo>0) ? 1 : maxNbStatesInTRGeo. Forcing 1 here without
+	  // the ">0" guard breaks FR boundary geo entities (which have 0 states): the count
+	  // would be written as 1 while no state value is emitted (loop bound = 0), corrupting
+	  // the LIST_GEOM_ENT stream so the reader reads node IDs as state IDs.
+	  // const CFuint nbStatesInTRGeo = (isFVMCC) ? 1 : (*trs)[iType]->getNbStatesInGeo(localElemID);
+	  const CFuint actualNbStatesInTRGeo = (*trs)[iType]->getNbStatesInGeo(localElemID);
+	  const CFuint nbStatesInTRGeo = (isFVMCC && actualNbStatesInTRGeo > 0) ? 1 : actualNbStatesInTRGeo;
 	  sendElements[isend++] = nbStatesInTRGeo;
 
 	  // TR geo nodes data

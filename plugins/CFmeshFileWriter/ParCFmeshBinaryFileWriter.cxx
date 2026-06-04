@@ -1176,7 +1176,11 @@ void ParCFmeshBinaryFileWriter::writeGeoList(CFuint iTRS, MPI_File* fh)
       // in cell center FVM only the first state per TRS face must be considered
       // the second one is a ghost one that doesn't have to be written !!
       nbNodesStatesInTRGeoTmp(iTR,0) = maxNbNodesInTRGeo;
-      nbNodesStatesInTRGeoTmp(iTR,1) = (isFVMCC) ? 1 : maxNbStatesInTRGeo;
+      // Vatsalya: only cap to 1 for cell-centered FVM when states actually exist; FR boundary
+      // geo entities have 0 states and must stay 0 (otherwise a garbage/out-of-range
+      // state global ID is written, corrupting LIST_GEOM_ENT for the reader).
+      // nbNodesStatesInTRGeoTmp(iTR,1) = (isFVMCC) ? 1 : maxNbStatesInTRGeo;
+      nbNodesStatesInTRGeoTmp(iTR,1) = (isFVMCC && maxNbStatesInTRGeo>0) ? 1 : maxNbStatesInTRGeo;
     }
   }
 
@@ -1305,8 +1309,11 @@ void ParCFmeshBinaryFileWriter::writeGeoList(CFuint iTRS, MPI_File* fh)
 	  const CFuint nbNodesInTRGeo  = (*trs)[iType]->getNbNodesInGeo(localElemID);
 	  sendElements[isend++] = nbNodesInTRGeo;
 	  
-	  // number of states in the current TR geo entity
-	  const CFuint nbStatesInTRGeo = (isFVMCC) ? 1 : (*trs)[iType]->getNbStatesInGeo(localElemID);
+	  // Vatsalya: number of states in the current TR geo entity (consistent with the
+	  // maxNbStatesInType guard above: cap to 1 only when states actually exist)
+	  // const CFuint nbStatesInTRGeo = (isFVMCC) ? 1 : (*trs)[iType]->getNbStatesInGeo(localElemID);
+	  const CFuint actualNbStatesInTRGeo = (*trs)[iType]->getNbStatesInGeo(localElemID);
+	  const CFuint nbStatesInTRGeo = (isFVMCC && actualNbStatesInTRGeo > 0) ? 1 : actualNbStatesInTRGeo;
 	  sendElements[isend++] = nbStatesInTRGeo;
 
 	  // TR geo nodes data
