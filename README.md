@@ -6,3 +6,8 @@ The object-oriented HPC platform for CFD, plasma and multi-physics simulations w
 To get started: https://github.com/andrealani/COOLFluiD/wiki
 
 News & updates on: https://twitter.com/coolfluid
+
+
+--->>>>>> IMPORTANT:
+
+Please download the plugins/MHD/testcases/COCONUT folder from original repo above and use it to replace the same folder in this repo. Some files were removed to fit the 100mb limit of free Github account, and if not replaced, the code may not compile at all.
